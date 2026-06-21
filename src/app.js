@@ -229,6 +229,9 @@ export function createApplication(options = {}) {
       }
       logger.info('Admin event action', { eventId, action });
       hub.broadcastSnapshot(eventId);
+      if (['REVEAL_WINNER', 'REVEAL_JOINT_WINNERS'].includes(action) && freshRound?.status === 'REVEALED') {
+        hub.broadcast(eventId, ['PARTICIPANT', 'DISPLAY'], 'round-revealed', eventService.revealPayload(freshRound));
+      }
       return sendJson(res, 200, buildAdminState(session, eventId));
     }
 

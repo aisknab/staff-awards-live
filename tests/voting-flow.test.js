@@ -62,8 +62,10 @@ test('20 participants vote concurrently while public tallies remain unmapped', a
   state = await adminAction(admin, state, 'REVEAL_WINNER');
   assert.equal(state.event.currentRound.status, 'REVEALED');
   const revealed = await participants[0].json('/api/participant/state');
+  assert.equal(revealed.round.revealed.winnerMode, 'single');
   assert.equal(revealed.round.revealed.winners.length, 1);
   assert.equal(revealed.round.revealed.winners[0].count, 9);
+  assert.equal(revealed.round.revealed.winners[0].voteCount, 9);
 });
 
 test('a participant can change one persisted vote before lock', async (t) => {

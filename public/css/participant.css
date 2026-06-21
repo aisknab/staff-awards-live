@@ -26,10 +26,33 @@
 .selected .nominee-check::after { content: "✓"; color: white; font-weight: 900; }
 .vote-footer { position: sticky; bottom: max(.5rem, env(safe-area-inset-bottom)); padding: .75rem 0 0; background: linear-gradient(transparent, var(--bg) 30%); }
 .vote-footer .button { width: 100%; }
-.reveal-card { text-align: center; animation: reveal-pop .65s cubic-bezier(.2,.8,.2,1) both; }
-.winner-name { margin: .6rem 0; font-size: clamp(2.5rem, 12vw, 5rem); line-height: .95; letter-spacing: -.05em; }
+.reveal-card {
+  text-align: center;
+  box-shadow: 0 0 0 1px rgba(255, 209, 102, .18), 0 22px 60px rgba(0, 0, 0, .34), 0 0 56px rgba(123, 140, 255, .16);
+  animation: reveal-pop .65s cubic-bezier(.2,.8,.2,1) both;
+}
+.winner-chip-list {
+  display: grid;
+  gap: .85rem;
+  margin-top: 1.2rem;
+}
+.winner-chip {
+  padding: 1rem;
+  border: 1px solid rgba(255, 209, 102, .38);
+  border-radius: 14px;
+  background: rgba(17, 20, 26, .78);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .24);
+}
+.winner-name {
+  margin: 0 0 .45rem;
+  font-size: clamp(2.4rem, 11vw, 4.8rem);
+  line-height: 1;
+  letter-spacing: 0;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+.joint .winner-name { font-size: clamp(2rem, 9vw, 3.8rem); }
 .winner-subtitle { color: var(--muted); font-size: 1.05rem; }
-.confetti-line { font-size: 2rem; letter-spacing: .3em; margin-bottom: 1rem; }
 @media (max-width: 440px) {
   .tally-row { grid-template-columns: 70px 1fr 38px; gap: .55rem; }
   .participant-card { border-radius: 15px; }

@@ -62,10 +62,12 @@ export class ResultService {
       ORDER BY rr.is_winner DESC, rr.vote_count DESC, n.display_name COLLATE NOCASE ASC
     `).all(roundId);
     const votesCast = rows.reduce((sum, row) => sum + Number(row.count), 0);
+    const winnerRows = rows.filter((row) => row.isWinner);
     return {
+      winnerMode: winnerRows.length === 0 ? 'none' : winnerRows.length === 1 ? 'single' : 'joint',
       votesCast,
-      results: rows.map((row) => ({ ...row, count: Number(row.count), isWinner: Boolean(row.isWinner) })),
-      winners: rows.filter((row) => row.isWinner).map((row) => ({ nomineeId: row.nomineeId, name: row.name, subtitle: row.subtitle, count: Number(row.count) })),
+      results: rows.map((row) => revealRow(row, votesCast)),
+      winners: winnerRows.map((row) => revealRow(row, votesCast)),
     };
   }
 
@@ -82,6 +84,19 @@ export class ResultService {
       return ah - bh || a.name.localeCompare(b.name);
     });
   }
+}
+
+function revealRow(row, votesCast) {
+  const count = Number(row.count);
+  return {
+    nomineeId: row.nomineeId,
+    name: row.name,
+    subtitle: row.subtitle,
+    count,
+    voteCount: count,
+    percentage: votesCast ? Math.round((count / votesCast) * 100) : 0,
+    isWinner: Boolean(row.isWinner),
+  };
 }
 
 export function leaderStatus(counts, votesCast, minimumVotes = 3) {

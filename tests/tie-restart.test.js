@@ -21,6 +21,8 @@ test('tied results can start a runoff with only tied nominees', async (t) => {
   })));
   state = await admin.json(`/api/admin/state?eventId=${state.event.id}`);
   state = await adminAction(admin, state, 'LOCK_VOTING');
+  assert.equal(state.event.currentRound.resultDecision.mode, 'tie');
+  assert.deepEqual(new Set(state.event.currentRound.resultDecision.tiedNominees.map((nominee) => nominee.nomineeId)), new Set(firstTwo.map((nominee) => nominee.id)));
   const normalReveal = await admin.request('/api/admin/action', {
     method: 'POST',
     body: { eventId: state.event.id, action: 'REVEAL_WINNER', expectedEventVersion: state.event.version, expectedRoundVersion: state.event.currentRound.version },

@@ -1,6 +1,7 @@
 import { ApiClient, ApiError } from './common/api.js';
 import { clear, formatPercent, h } from './common/dom.js';
 import { LiveConnection } from './common/connection.js';
+import { playRevealBurst } from './common/reveal-effects.js';
 
 const root = document.querySelector('#app');
 const api = new ApiClient();
@@ -8,6 +9,7 @@ let state = null;
 let connection = null;
 let connectionStatus = 'reconnecting';
 let message = '';
+const animatedRevealKeys = new Set();
 
 void initialise();
 
@@ -56,6 +58,8 @@ function connect() {
         state.progress = payload.progress;
       } else if (type === 'vote-progress' && state?.round?.id === payload.roundId) {
         state.round.maskedTally.votesCast = payload.votesCast;
+      } else if (type === 'round-revealed' && state?.round?.id === payload.roundId) {
+        scheduleRevealAnimation(revealKeyFromPayload(payload), 'display');
       }
       render();
     },
@@ -159,15 +163,47 @@ function reveal(round) {
   const revealed = round.revealed;
   const winners = revealed?.winners ?? [];
   if (!winners.length) return panel(round.award.title, 'No votes were cast for this award.', 'Result');
-  return h('div', { class: 'display-panel display-winner' },
-    h('p', { class: 'display-kicker', text: winners.length > 1 ? 'Joint winners' : 'Winner' }),
-    h('p', { class: 'display-subtitle', text: round.award.title }),
-    winners.map((winner) => h('div', {},
-      h('h1', { class: 'display-title', text: winner.name }),
-      winner.subtitle ? h('p', { class: 'display-subtitle', text: winner.subtitle }) : null,
-      h('p', { class: 'display-subtitle', text: `${winner.count} vote${winner.count === 1 ? '' : 's'} · ${formatPercent(winner.count, revealed.votesCast)}` }),
-    )),
+  const mode = revealed.winnerMode ?? (winners.length > 1 ? 'joint' : 'single');
+  const revealKey = revealKeyFromRound(round);
+  scheduleRevealAnimation(revealKey, 'display');
+  return h('div', { class: `display-panel display-winner winner-burst${mode === 'joint' ? ' joint' : ''}`, dataset: { revealKey } },
+    h('div', { class: 'reveal-content' },
+      h('p', { class: 'sr-only', 'aria-live': 'polite', text: `${mode === 'joint' ? 'Joint winners' : 'Winner'}: ${winners.map((winner) => winner.name).join(', ')}` }),
+      h('p', { class: 'display-kicker', text: mode === 'joint' ? 'Joint winners' : 'Winner' }),
+      h('p', { class: 'display-subtitle award-title', text: round.award.title }),
+      h('div', { class: 'display-winner-list' }, winners.map((winner) => h('div', { class: 'display-winner-card' },
+        h('h1', { class: 'display-winner-name', text: winner.name }),
+        winner.subtitle ? h('p', { class: 'display-winner-meta', text: winner.subtitle }) : null,
+        h('p', { class: 'display-winner-meta', text: `${winnerVoteCount(winner)} vote${winnerVoteCount(winner) === 1 ? '' : 's'} · ${winnerPercentage(winner, revealed.votesCast)}` }),
+      ))),
+    ),
   );
+}
+
+function winnerVoteCount(winner) {
+  return winner.voteCount ?? winner.count ?? 0;
+}
+
+function winnerPercentage(winner, votesCast) {
+  return Number.isFinite(winner.percentage) ? `${winner.percentage}%` : formatPercent(winnerVoteCount(winner), votesCast);
+}
+
+function revealKeyFromRound(round) {
+  const winners = round.revealed?.winners ?? [];
+  return `${round.id}:${round.revealed?.winnerMode ?? winners.length}:${winners.map((winner) => winner.nomineeId).join(',')}`;
+}
+
+function revealKeyFromPayload(payload) {
+  return `${payload.roundId}:${payload.winnerMode ?? payload.winners?.length ?? 0}:${(payload.winners ?? []).map((winner) => winner.nomineeId).join(',')}`;
+}
+
+function scheduleRevealAnimation(revealKey, variant) {
+  if (!revealKey || animatedRevealKeys.has(revealKey)) return;
+  animatedRevealKeys.add(revealKey);
+  queueMicrotask(() => {
+    const node = document.querySelector('[data-reveal-key]');
+    if (node?.dataset.revealKey === revealKey) playRevealBurst(node, { variant });
+  });
 }
 
 function panel(title, subtitle, kicker = 'Staff awards') {

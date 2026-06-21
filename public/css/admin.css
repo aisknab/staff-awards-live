@@ -10,6 +10,32 @@
 .admin-card { padding: 1.15rem; }
 .admin-card h2, .admin-card h3 { margin: 0 0 1rem; }
 .control-grid { display: flex; gap: .65rem; flex-wrap: wrap; }
+.tie-choice-panel {
+  flex: 1 0 100%;
+  border: 1px solid rgba(255, 209, 102, .5);
+  border-radius: 14px;
+  padding: 1rem;
+  background: rgba(255, 209, 102, .08);
+}
+.tie-choice-panel h2 { margin: 0; }
+.tie-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: .55rem;
+}
+.tie-list li {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(90px, auto) minmax(70px, auto);
+  gap: .8rem;
+  align-items: center;
+  padding: .65rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, .14);
+}
+.tie-vote-count { font-weight: 850; color: var(--warning); text-align: right; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: .7rem; }
 .admin-metric { border: 1px solid var(--border); border-radius: 14px; padding: .85rem; background: var(--surface-2); }
 .admin-metric strong { display: block; font-size: 1.45rem; }
@@ -46,4 +72,6 @@ th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-s
   .admin-header { align-items: flex-start; }
   .people-list-tools { grid-template-columns: 1fr; }
   .people-list-buttons { grid-column: auto; }
+  .tie-list li { grid-template-columns: 1fr; gap: .25rem; }
+  .tie-vote-count { text-align: left; }
 }

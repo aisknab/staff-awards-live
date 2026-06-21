@@ -570,9 +570,10 @@ function actionButtons(event, round) {
   if (round?.status === 'PREVIEW') add('Open voting', 'OPEN_VOTING');
   if (round?.status === 'OPEN') add('Close voting', 'LOCK_VOTING');
   if (round?.status === 'LOCKED') {
-    add('Reveal winner', 'REVEAL_WINNER');
-    add('Reveal joint winners', 'REVEAL_JOINT_WINNERS', 'button secondary');
-    add('Start runoff', 'START_RUNOFF', 'button secondary');
+    const decision = round.resultDecision;
+    if (decision?.mode === 'tie') buttons.push(tieChoicePanel(round, decision));
+    else if (decision?.mode === 'none') buttons.push(noVotePanel(round, decision));
+    else add('Reveal winner', 'REVEAL_WINNER');
     add('Reopen voting', 'REOPEN_VOTING', 'button warning');
   }
   if (round?.status === 'REVEALED') add('Next award', 'NEXT_AWARD');
@@ -589,10 +590,55 @@ function actionButtons(event, round) {
   return buttons;
 }
 
+function tieChoicePanel(round, decision) {
+  const names = decision.tiedNominees.map((nominee) => nominee.name);
+  const voteWord = decision.topCount === 1 ? 'vote' : 'votes';
+  return h('section', { class: 'tie-choice-panel stack', 'aria-labelledby': 'tie-detected-title' },
+    h('div', {},
+      h('p', { class: 'eyebrow', text: 'Tie detected' }),
+      h('h2', { id: 'tie-detected-title', text: `${decision.topCount} ${voteWord} each` }),
+      h('p', { class: 'muted', text: `${formatNameList(names)} are tied for first place.` }),
+    ),
+    h('ul', { class: 'tie-list' }, decision.tiedNominees.map((nominee) => h('li', {},
+      h('strong', { text: nominee.name }),
+      nominee.subtitle ? h('span', { class: 'muted', text: nominee.subtitle }) : null,
+      h('span', { class: 'tie-vote-count', text: `${nominee.voteCount} ${voteWord}` }),
+    ))),
+    h('p', { class: 'notice-banner', text: `Reveal ${formatNameList(names)} as joint winners for ${round.award.title}?` }),
+    h('div', { class: 'row' },
+      h('button', { class: 'button', type: 'button', disabled: busy, onClick: () => action('REVEAL_JOINT_WINNERS'), text: 'Reveal joint winners' }),
+      h('button', { class: 'button secondary', type: 'button', disabled: busy, onClick: () => action('START_RUNOFF'), text: 'Start tie-break vote' }),
+    ),
+  );
+}
+
+function noVotePanel(round, decision) {
+  return h('section', { class: 'tie-choice-panel stack' },
+    h('div', {},
+      h('p', { class: 'eyebrow', text: 'No result' }),
+      h('h2', { text: decision.message ?? 'No votes were cast for this award' }),
+      h('p', { class: 'muted', text: 'Reveal the award as having no winner, or reopen voting to collect votes.' }),
+    ),
+    h('button', { class: 'button', type: 'button', disabled: busy, onClick: () => action('REVEAL_WINNER'), text: 'Reveal no-vote result' }),
+  );
+}
+
 async function action(actionName) {
   if (busy || !appState?.event) return;
   const round = appState.event.currentRound;
-  if (['REVEAL_WINNER', 'REVEAL_JOINT_WINNERS'].includes(actionName) && !confirm('Reveal the result to every connected screen?')) return;
+  if (actionName === 'REVEAL_JOINT_WINNERS') {
+    const names = round?.resultDecision?.tiedNominees?.map((nominee) => nominee.name) ?? [];
+    const promptText = names.length
+      ? `Reveal ${formatNameList(names)} as joint winners for ${round.award.title}?`
+      : 'Reveal joint winners to every connected screen?';
+    if (!confirm(promptText)) return;
+  }
+  if (actionName === 'REVEAL_WINNER') {
+    const promptText = round?.resultDecision?.mode === 'none'
+      ? `Reveal no winner for ${round.award.title}?`
+      : 'Reveal the result to every connected screen?';
+    if (!confirm(promptText)) return;
+  }
   if (actionName === 'FINISH_EVENT' && !confirm('Finish this event? No further votes will be accepted.')) return;
   if (actionName === 'REOPEN_EVENT' && !confirm('Reopen this event? Existing results will be kept and joining will reopen.')) return;
   if (actionName === 'RESTART_EVENT') {
@@ -631,6 +677,12 @@ async function action(actionName) {
     busy = false;
     render();
   }
+}
+
+function formatNameList(names) {
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
 }
 
 function accessPanel(event) {

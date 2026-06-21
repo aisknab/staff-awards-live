@@ -92,6 +92,17 @@ a { color: var(--accent-strong); }
 .stack { display: grid; gap: 1rem; }
 .row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
 .row.between { justify-content: space-between; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .error-banner, .notice-banner {
   border-radius: 12px;
   padding: .8rem 1rem;
@@ -109,9 +120,6 @@ a { color: var(--accent-strong); }
 
 @keyframes fill-in { from { transform: scaleX(.05); opacity: .3; } to { transform: scaleX(1); opacity: 1; } }
 @keyframes reveal-pop { 0% { transform: scale(.92); opacity: 0; } 65% { transform: scale(1.03); } 100% { transform: scale(1); opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
-}
 .tally-progress {
   width: 100%;
   height: 18px;
@@ -125,3 +133,79 @@ a { color: var(--accent-strong); }
 .tally-progress::-webkit-progress-bar { background: #0f1116; }
 .tally-progress::-webkit-progress-value { background: linear-gradient(90deg, var(--accent), #b090ff); border-radius: 999px; }
 .tally-progress::-moz-progress-bar { background: linear-gradient(90deg, var(--accent), #b090ff); border-radius: 999px; }
+
+.winner-burst {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.reveal-content {
+  position: relative;
+  z-index: 1;
+}
+.confetti-burst {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.confetti-piece {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--piece-color);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.3) rotate(0deg);
+  animation: confetti-burst 2.6s cubic-bezier(.16, .82, .28, 1) forwards;
+}
+.confetti-piece.round {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+.winner-chip, .display-winner-card {
+  animation: winner-name-burst .72s cubic-bezier(.18, .9, .2, 1.1) both;
+}
+.winner-chip:nth-child(2), .display-winner-card:nth-child(2) { animation-delay: .08s; }
+.winner-chip:nth-child(3), .display-winner-card:nth-child(3) { animation-delay: .16s; }
+.winner-chip:nth-child(4), .display-winner-card:nth-child(4) { animation-delay: .24s; }
+
+@keyframes confetti-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(.25) rotate(0deg);
+  }
+  14% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y) + var(--fall))) scale(1) rotate(calc(var(--rot) + 260deg));
+  }
+}
+
+@keyframes winner-name-burst {
+  0% { opacity: 0; transform: scale(.72); filter: blur(8px); }
+  64% { opacity: 1; transform: scale(1.06); filter: blur(0); }
+  100% { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+
+@keyframes reduced-reveal {
+  from { opacity: 0; transform: scale(.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
+  .confetti-burst { display: none !important; }
+  .winner-burst, .winner-chip, .display-winner-card {
+    animation: reduced-reveal .28s ease-out both !important;
+  }
+}

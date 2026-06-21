@@ -256,6 +256,43 @@ export class EventService {
       lockedAt: round.locked_at,
       revealedAt: round.revealed_at,
       completedAt: round.completed_at,
+      resultDecision: round.status === 'LOCKED' ? this.lockedResultDecision(round) : null,
+    };
+  }
+
+  lockedResultDecision(round) {
+    const summary = this.results.winnerSummary(round.id);
+    if (summary.votesCast === 0) {
+      return {
+        mode: 'none',
+        votesCast: 0,
+        message: 'No votes were cast for this award',
+      };
+    }
+    if (summary.winners.length > 1) {
+      return {
+        mode: 'tie',
+        votesCast: summary.votesCast,
+        topCount: summary.topCount,
+        tiedNominees: summary.winners.map((winner) => ({
+          nomineeId: winner.nomineeId,
+          name: winner.name,
+          subtitle: winner.subtitle,
+          voteCount: winner.count,
+        })),
+      };
+    }
+    const winner = summary.winners[0];
+    return {
+      mode: 'single',
+      votesCast: summary.votesCast,
+      topCount: summary.topCount,
+      winner: winner ? {
+        nomineeId: winner.nomineeId,
+        name: winner.name,
+        subtitle: winner.subtitle,
+        voteCount: winner.count,
+      } : null,
     };
   }
 
@@ -448,6 +485,20 @@ export class EventService {
     });
   }
 
+  revealPayload(round) {
+    const revealed = this.results.revealed(round.id);
+    return {
+      type: 'round-revealed',
+      roundId: round.id,
+      roundVersion: round.version,
+      awardTitle: round.award_title,
+      winnerMode: revealed.winnerMode,
+      winners: revealed.winners,
+      votesCast: revealed.votesCast,
+      serverTime: nowIso(),
+    };
+  }
+
   startRunoff(event, round) {
     if (event.status !== 'LIVE') throw conflict('INVALID_STATE_TRANSITION', 'The event is not live');
     requireRound(round);
@@ -634,7 +685,7 @@ export class EventService {
   exportCsv(eventId) {
     const event = this.getEvent(eventId);
     const rows = this.db.prepare(`
-      SELECT a.title AS award, r.round_number AS roundNumber, n.display_name AS nominee,
+      SELECT r.id AS roundId, a.title AS award, r.round_number AS roundNumber, n.display_name AS nominee,
              rr.vote_count AS voteCount, rr.is_winner AS winner,
              r.opened_at AS openedAt, r.locked_at AS lockedAt, r.revealed_at AS revealedAt
       FROM rounds r
@@ -646,13 +697,16 @@ export class EventService {
     `).all(eventId);
     const lines = [['Event', 'Award', 'Round', 'Nominee', 'Vote count', 'Percentage', 'Winner', 'Opened time', 'Locked time', 'Revealed time']];
     const totals = new Map();
+    const winnerCounts = new Map();
     for (const row of rows) {
-      const key = `${row.award}:${row.roundNumber}`;
+      const key = row.roundId;
       totals.set(key, (totals.get(key) ?? 0) + Number(row.voteCount));
+      if (row.winner) winnerCounts.set(key, (winnerCounts.get(key) ?? 0) + 1);
     }
     for (const row of rows) {
-      const total = totals.get(`${row.award}:${row.roundNumber}`) || 0;
-      lines.push([event.title, row.award, row.roundNumber, row.nominee, row.voteCount, total ? `${((Number(row.voteCount) / total) * 100).toFixed(1)}%` : '0%', row.winner ? 'Yes' : 'No', row.openedAt ?? '', row.lockedAt ?? '', row.revealedAt ?? '']);
+      const total = totals.get(row.roundId) || 0;
+      const winnerLabel = row.winner ? (winnerCounts.get(row.roundId) > 1 ? 'Joint winner' : 'Yes') : 'No';
+      lines.push([event.title, row.award, row.roundNumber, row.nominee, row.voteCount, total ? `${((Number(row.voteCount) / total) * 100).toFixed(1)}%` : '0%', winnerLabel, row.openedAt ?? '', row.lockedAt ?? '', row.revealedAt ?? '']);
     }
     return lines.map((line) => line.map(csvCell).join(',')).join('\r\n') + '\r\n';
   }
