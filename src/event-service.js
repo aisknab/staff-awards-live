@@ -232,6 +232,68 @@ export class EventService {
     };
   }
 
+  listPeopleLists() {
+    const lists = this.db.prepare(`
+      SELECT id, name, created_at AS createdAt, updated_at AS updatedAt
+      FROM people_lists
+      ORDER BY updated_at DESC, name ASC
+    `).all();
+    if (!lists.length) return [];
+
+    const rows = this.db.prepare(`
+      SELECT list_id AS listId, display_name AS displayName, subtitle, sort_order AS sortOrder
+      FROM people_list_entries
+      ORDER BY list_id, sort_order
+    `).all();
+    const entriesByList = new Map();
+    for (const row of rows) {
+      const entries = entriesByList.get(row.listId) ?? [];
+      entries.push({ displayName: row.displayName, subtitle: row.subtitle });
+      entriesByList.set(row.listId, entries);
+    }
+    return lists.map((list) => ({ ...list, entries: entriesByList.get(list.id) ?? [] }));
+  }
+
+  savePeopleList(raw) {
+    const input = validatePeopleList(raw);
+    if (input.listId) {
+      const existing = this.db.prepare('SELECT id FROM people_lists WHERE id = ?').get(input.listId);
+      if (!existing) throw notFound('People list not found');
+    }
+    const duplicate = this.db.prepare('SELECT id FROM people_lists WHERE lower(name) = lower(?) AND id <> ?').get(input.name, input.listId ?? '');
+    if (duplicate) throw conflict('PEOPLE_LIST_EXISTS', 'A people list with that name already exists');
+
+    const listId = input.listId ?? id();
+    const timestamp = nowIso();
+    this.db.transaction(() => {
+      if (input.listId) {
+        this.db.prepare('UPDATE people_lists SET name = ?, updated_at = ? WHERE id = ?').run(input.name, timestamp, listId);
+        this.db.prepare('DELETE FROM people_list_entries WHERE list_id = ?').run(listId);
+      } else {
+        this.db.prepare('INSERT INTO people_lists (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(listId, input.name, timestamp, timestamp);
+      }
+      const insert = this.db.prepare(`
+        INSERT INTO people_list_entries (list_id, display_name, subtitle, sort_order)
+        VALUES (?, ?, ?, ?)
+      `);
+      input.entries.forEach((entry, index) => insert.run(listId, entry.displayName, entry.subtitle, index));
+      this.audit(null, input.listId ? 'PEOPLE_LIST_UPDATED' : 'PEOPLE_LIST_CREATED', { listId, entryCount: input.entries.length });
+    });
+    return this.listPeopleLists();
+  }
+
+  deletePeopleList(raw) {
+    const input = object(raw);
+    const listId = idText(input.listId ?? input.id, 'listId');
+    const existing = this.db.prepare('SELECT id FROM people_lists WHERE id = ?').get(listId);
+    if (!existing) throw notFound('People list not found');
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM people_lists WHERE id = ?').run(listId);
+      this.audit(null, 'PEOPLE_LIST_DELETED', { listId });
+    });
+    return this.listPeopleLists();
+  }
+
   performAction(eventId, raw, actorRole = 'ADMIN') {
     const input = object(raw);
     const action = text(input.action, 'action', { max: 50 });
@@ -595,6 +657,29 @@ function validateConfig(raw) {
     participantLimit: integer(input.participantLimit ?? 30, 'participantLimit', { min: 2, max: 250 }),
     nominees,
     awards,
+  };
+}
+
+function validatePeopleList(raw) {
+  const input = object(raw);
+  const entriesRaw = array(input.entries, 'entries', { min: 1, max: 100 });
+  const entries = entriesRaw.map((rawEntry, index) => {
+    const entry = object(rawEntry, `entries[${index}]`);
+    return {
+      displayName: text(entry.displayName, `entries[${index}].displayName`, { max: 100 }),
+      subtitle: text(entry.subtitle ?? '', `entries[${index}].subtitle`, { required: false, max: 100 }),
+    };
+  });
+  const names = new Set();
+  for (const entry of entries) {
+    const identity = `${entry.displayName.toLocaleLowerCase()}:${entry.subtitle.toLocaleLowerCase()}`;
+    if (names.has(identity)) throw badRequest('VALIDATION_ERROR', `Duplicate person: ${entry.displayName}`);
+    names.add(identity);
+  }
+  return {
+    listId: input.listId || input.id ? idText(input.listId ?? input.id, 'listId') : null,
+    name: text(input.name, 'name', { max: 100 }),
+    entries,
   };
 }
 

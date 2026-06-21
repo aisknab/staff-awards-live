@@ -21,6 +21,8 @@
 .url-box code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .code-large { font-size: 1.8rem; letter-spacing: .14em; font-weight: 900; color: var(--accent-strong); }
 .config-grid { display: grid; grid-template-columns: minmax(300px, .7fr) minmax(400px, 1.3fr); gap: 1rem; }
+.people-list-tools { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(150px, .75fr); gap: .7rem; align-items: end; }
+.people-list-buttons { grid-column: 1 / -1; display: flex; gap: .5rem; flex-wrap: wrap; }
 .award-editor-list { display: grid; gap: .8rem; }
 .award-editor { padding: 1rem; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); }
 .award-editor-head { display: flex; justify-content: space-between; gap: .8rem; align-items: center; margin-bottom: .8rem; }
@@ -42,4 +44,6 @@ th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-s
   .access-grid { grid-template-columns: 1fr; }
   .metric-grid { grid-template-columns: 1fr 1fr; }
   .admin-header { align-items: flex-start; }
+  .people-list-tools { grid-template-columns: 1fr; }
+  .people-list-buttons { grid-column: auto; }
 }

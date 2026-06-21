@@ -23,6 +23,7 @@ The project is intentionally bespoke and dependency-light:
 - Vote changes until the controller locks the round
 - Joint-winner and runoff handling
 - Event, vote, session, and reveal persistence in SQLite
+- Reusable saved people lists for future event setup
 - Automatic browser reconnection through SSE with polling fallback
 - Secure opaque cookies, CSRF tokens, exact Origin validation, rate limits, and security headers
 - QR token rotation, participant revocation, emergency display blanking, CSV export, backups, and health endpoints
@@ -133,17 +134,18 @@ Production startup fails rather than silently inventing missing secrets.
 
 1. Open `/admin` and sign in.
 2. Create an event.
-3. Paste one nominee per line. Add an optional team after `|`.
-4. Add and order the awards, then choose the eligible nominees for each.
-5. Save the draft and open the lobby.
-6. Open the private presentation link on the projector or shared-screen device.
-7. Show the participant QR code and manual event code.
-8. Show the first award, then open voting.
-9. Watch the private named tally while public clients receive only masked counts.
-10. Close voting.
-11. Reveal the winner, reveal joint winners, or start a runoff when tied.
-12. Move to the next award.
-13. Export the final CSV after the event.
+3. Load a saved people list or paste one nominee per line. Add an optional team after `|`.
+4. Save or update the people list if it should be reused for future events.
+5. Add and order the awards, then choose the eligible nominees for each.
+6. Save the draft and open the lobby.
+7. Open the private presentation link on the projector or shared-screen device.
+8. Show the participant QR code and manual event code.
+9. Show the first award, then open voting.
+10. Watch the private named tally while public clients receive only masked counts.
+11. Close voting.
+12. Reveal the winner, reveal joint winners, or start a runoff when tied.
+13. Move to the next award.
+14. Export the final CSV after the event.
 
 Reveal and destructive actions require confirmation in the controller UI. A revealed round cannot be reopened or reset. A finished event can be reopened to keep existing participants and results, or restarted from the lobby with the same configuration after clearing participants, rounds, votes, and revealed results.
 

@@ -53,17 +53,19 @@ export function createApplication(options = {}) {
 
   const buildAdminState = (session, requestedEventId = null) => {
     const eventList = eventService.listEvents();
+    const peopleLists = eventService.listPeopleLists();
     const selectedEventId = requestedEventId
       ?? eventList.find((event) => ['LIVE', 'LOBBY'].includes(event.status))?.id
       ?? eventList.find((event) => event.status === 'DRAFT')?.id
       ?? eventList[0]?.id
       ?? null;
-    if (!selectedEventId) return { role: 'ADMIN', csrfToken: session.csrfToken, events: eventList, selectedEventId: null, event: null };
+    if (!selectedEventId) return { role: 'ADMIN', csrfToken: session.csrfToken, events: eventList, peopleLists, selectedEventId: null, event: null };
     const state = eventService.adminState(selectedEventId);
     return {
       role: 'ADMIN',
       csrfToken: session.csrfToken,
       events: eventList,
+      peopleLists,
       selectedEventId,
       ...state,
       progress: { ...state.progress, ...hub.presence(selectedEventId) },
@@ -161,6 +163,31 @@ export function createApplication(options = {}) {
       const saved = eventService.saveConfig(body);
       logger.info('Event configuration saved', { eventId: saved.id });
       return sendJson(res, 200, buildAdminState(session, saved.id));
+    }
+
+    if (method === 'GET' && pathname === '/api/admin/people-lists') {
+      sessionService.authenticate(req, 'ADMIN');
+      return sendJson(res, 200, { peopleLists: eventService.listPeopleLists() });
+    }
+
+    if (method === 'PUT' && pathname === '/api/admin/people-lists') {
+      const session = sessionService.authenticate(req, 'ADMIN');
+      validateCsrf(req, session, config);
+      limiter.check('admin-action', session.id, 60, 60_000);
+      const body = object(await readJson(req, config.maxBodyBytes));
+      eventService.savePeopleList(body);
+      const eventId = body.eventId ? idText(body.eventId, 'eventId') : null;
+      return sendJson(res, 200, buildAdminState(session, eventId));
+    }
+
+    if (method === 'DELETE' && pathname === '/api/admin/people-lists') {
+      const session = sessionService.authenticate(req, 'ADMIN');
+      validateCsrf(req, session, config);
+      limiter.check('admin-action', session.id, 60, 60_000);
+      const body = object(await readJson(req, config.maxBodyBytes));
+      eventService.deletePeopleList(body);
+      const eventId = body.eventId ? idText(body.eventId, 'eventId') : null;
+      return sendJson(res, 200, buildAdminState(session, eventId));
     }
 
     if (method === 'POST' && pathname === '/api/admin/action') {

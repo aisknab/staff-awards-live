@@ -13,6 +13,8 @@ let busy = false;
 let hideTally = false;
 let draft = null;
 let creatingNew = false;
+let selectedPeopleListId = '';
+let peopleListName = '';
 
 void initialise();
 
@@ -135,6 +137,8 @@ async function selectEvent(event) {
   if (!eventId) return;
   creatingNew = false;
   draft = null;
+  selectedPeopleListId = '';
+  peopleListName = '';
   message = '';
   try {
     appState = await api.request(`/api/admin/state?eventId=${encodeURIComponent(eventId)}`);
@@ -149,6 +153,8 @@ function newEvent() {
   creatingNew = true;
   connection?.close();
   draft = emptyDraft();
+  selectedPeopleListId = '';
+  peopleListName = '';
   message = '';
   render();
 }
@@ -207,12 +213,12 @@ function configEditor() {
         field('Event title', h('input', { class: 'input', value: draft.title, maxlength: '100', onInput: (event) => { draft.title = event.target.value; } })),
         field('Subtitle', h('input', { class: 'input', value: draft.subtitle, maxlength: '200', onInput: (event) => { draft.subtitle = event.target.value; } })),
         field('Participant limit', h('input', { class: 'input', type: 'number', min: '2', max: '250', value: draft.participantLimit, onInput: (event) => { draft.participantLimit = Number(event.target.value); } })),
+        peopleListControls(),
         field('Nominees', h('textarea', {
           class: 'textarea', value: draft.nomineeText, placeholder: 'Alex Smith | Sales\nCharlie Lee | Engineering',
           onInput: (event) => { draft.nomineeText = event.target.value; },
           onChange: () => {
-            const keys = parsedNominees().map((nominee) => nominee.key);
-            for (const award of draft.awards) award.eligibleKeys = new Set(keys);
+            selectAllAwardNominees();
             setTimeout(render, 0);
           },
         })),
@@ -233,6 +239,117 @@ function configEditor() {
 
 function field(label, control) {
   return h('div', { class: 'field' }, h('label', { text: label }), control);
+}
+
+function peopleListControls() {
+  const lists = appState?.peopleLists ?? [];
+  return h('div', { class: 'people-list-tools' },
+    field('Saved people list', h('select', { class: 'select', onChange: selectPeopleList },
+      h('option', { value: '', selected: !selectedPeopleListId, text: lists.length ? 'Choose a list' : 'No saved lists' }),
+      ...lists.map((list) => h('option', { value: list.id, selected: list.id === selectedPeopleListId, text: `${list.name} · ${list.entries.length}` })),
+    )),
+    field('List name', h('input', { class: 'input', value: peopleListName, maxlength: '100', placeholder: 'All staff', onInput: (event) => { peopleListName = event.target.value; } })),
+    h('div', { class: 'people-list-buttons' },
+      h('button', { class: 'button secondary small', type: 'button', disabled: !selectedPeopleListId || busy, onClick: loadSelectedPeopleList, text: 'Load' }),
+      h('button', { class: 'button small', type: 'button', disabled: busy, onClick: savePeopleList, text: selectedPeopleListId ? 'Update list' : 'Save list' }),
+      h('button', { class: 'button ghost small', type: 'button', disabled: busy, onClick: clearPeopleListSelection, text: 'New list' }),
+      h('button', { class: 'button danger small', type: 'button', disabled: !selectedPeopleListId || busy, onClick: deleteSelectedPeopleList, text: 'Delete' }),
+    ),
+  );
+}
+
+function selectPeopleList(event) {
+  selectedPeopleListId = event.target.value;
+  const list = selectedPeopleList();
+  peopleListName = list?.name ?? '';
+  render();
+}
+
+function selectedPeopleList() {
+  return (appState?.peopleLists ?? []).find((list) => list.id === selectedPeopleListId) ?? null;
+}
+
+function nomineeLine(entry) {
+  return `${entry.displayName}${entry.subtitle ? ` | ${entry.subtitle}` : ''}`;
+}
+
+function selectAllAwardNominees() {
+  const keys = parsedNominees().map((nominee) => nominee.key);
+  for (const award of draft.awards) award.eligibleKeys = new Set(keys);
+}
+
+function loadSelectedPeopleList() {
+  const list = selectedPeopleList();
+  if (!list) return;
+  const nextText = list.entries.map(nomineeLine).join('\n');
+  if (draft.nomineeText.trim() && draft.nomineeText.trim() !== nextText.trim() && !confirm(`Replace the current nominees with "${list.name}"?`)) return;
+  draft.nomineeText = nextText;
+  peopleListName = list.name;
+  selectAllAwardNominees();
+  render();
+}
+
+function clearPeopleListSelection() {
+  selectedPeopleListId = '';
+  peopleListName = '';
+  render();
+}
+
+async function savePeopleList() {
+  if (busy) return;
+  const entries = parsedNominees().map((nominee) => ({ displayName: nominee.displayName, subtitle: nominee.subtitle }));
+  if (!entries.length) {
+    message = 'Add at least one person before saving a list.';
+    render();
+    return;
+  }
+  busy = true;
+  message = '';
+  render();
+  try {
+    appState = await api.request('/api/admin/people-lists', {
+      method: 'PUT',
+      body: {
+        eventId: draft.eventId ?? appState?.selectedEventId ?? null,
+        listId: selectedPeopleListId || null,
+        name: peopleListName,
+        entries,
+      },
+    });
+    const saved = (appState.peopleLists ?? []).find((list) => list.id === selectedPeopleListId)
+      ?? (appState.peopleLists ?? []).find((list) => list.name.toLocaleLowerCase() === peopleListName.trim().toLocaleLowerCase());
+    selectedPeopleListId = saved?.id ?? '';
+    peopleListName = saved?.name ?? peopleListName;
+    message = 'People list saved.';
+  } catch (error) {
+    message = friendlyError(error);
+  } finally {
+    busy = false;
+    render();
+  }
+}
+
+async function deleteSelectedPeopleList() {
+  if (busy) return;
+  const list = selectedPeopleList();
+  if (!list || !confirm(`Delete "${list.name}"? Events already saved will not change.`)) return;
+  busy = true;
+  message = '';
+  render();
+  try {
+    appState = await api.request('/api/admin/people-lists', {
+      method: 'DELETE',
+      body: { eventId: draft.eventId ?? appState?.selectedEventId ?? null, listId: list.id },
+    });
+    selectedPeopleListId = '';
+    peopleListName = '';
+    message = 'People list deleted.';
+  } catch (error) {
+    message = friendlyError(error);
+  } finally {
+    busy = false;
+    render();
+  }
 }
 
 function awardEditor(award, index, nominees) {
@@ -492,6 +609,7 @@ function friendlyError(error) {
       TIE_REQUIRES_DECISION: 'The top result is tied. Choose joint winners or start a runoff.',
       NOT_TIED: 'The current result is not tied.',
       CONFLICT: 'Another controller action changed the event. The latest state has been loaded.',
+      PEOPLE_LIST_EXISTS: 'A saved people list with that name already exists.',
       INVALID_STATE_TRANSITION: error.message,
       RATE_LIMITED: 'Too many requests. Wait briefly and try again.',
     };
