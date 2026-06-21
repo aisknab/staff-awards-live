@@ -52,6 +52,54 @@ test('finishing an event clears an unrevealed active round and prevents further 
   assert.equal(joined.round.status, 'PREVIEW');
 });
 
+test('event details can be edited after the lobby opens without rewriting configuration', async (t) => {
+  const ctx = await startTestApp();
+  t.after(() => ctx.stop());
+  const admin = ctx.client();
+  await loginAdmin(admin);
+  let state = await createEvent(admin, { participantLimit: 5 });
+  const originalAwardIds = state.event.awards.map((award) => award.id);
+  const originalNomineeIds = state.event.nominees.map((nominee) => nominee.id);
+
+  state = await adminAction(admin, state, 'OPEN_LOBBY');
+  const participants = [ctx.client(), ctx.client(), ctx.client()];
+  await Promise.all(participants.map((participant) => joinWithCode(participant, state.event.access.manualCode)));
+
+  const tooLow = await admin.request('/api/admin/event-details', {
+    method: 'PUT',
+    body: {
+      eventId: state.event.id,
+      expectedEventVersion: state.event.version,
+      title: 'Renamed Awards',
+      subtitle: 'Updated subtitle',
+      participantLimit: 2,
+    },
+  });
+  assert.equal(tooLow.response.status, 409);
+  assert.equal(tooLow.payload.error.code, 'PARTICIPANT_LIMIT_TOO_LOW');
+
+  state = await admin.json('/api/admin/event-details', {
+    method: 'PUT',
+    body: {
+      eventId: state.event.id,
+      expectedEventVersion: state.event.version,
+      title: 'Renamed Awards',
+      subtitle: 'Updated subtitle',
+      participantLimit: 4,
+    },
+  });
+
+  assert.equal(state.event.status, 'LOBBY');
+  assert.equal(state.event.title, 'Renamed Awards');
+  assert.equal(state.event.subtitle, 'Updated subtitle');
+  assert.equal(state.event.participantLimit, 4);
+  assert.deepEqual(state.event.awards.map((award) => award.id), originalAwardIds);
+  assert.deepEqual(state.event.nominees.map((nominee) => nominee.id), originalNomineeIds);
+
+  const participantState = await participants[0].json('/api/participant/state');
+  assert.equal(participantState.event.title, 'Renamed Awards');
+});
+
 test('restarting a finished event clears participants and prior results', async (t) => {
   const ctx = await startTestApp();
   t.after(() => ctx.stop());

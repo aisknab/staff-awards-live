@@ -165,6 +165,17 @@ export function createApplication(options = {}) {
       return sendJson(res, 200, buildAdminState(session, saved.id));
     }
 
+    if (method === 'PUT' && pathname === '/api/admin/event-details') {
+      const session = sessionService.authenticate(req, 'ADMIN');
+      validateCsrf(req, session, config);
+      limiter.check('admin-action', session.id, 60, 60_000);
+      const body = await readJson(req, config.maxBodyBytes);
+      const saved = eventService.updateDetails(body);
+      logger.info('Event details updated', { eventId: saved.id });
+      hub.broadcastSnapshot(saved.id);
+      return sendJson(res, 200, buildAdminState(session, saved.id));
+    }
+
     if (method === 'GET' && pathname === '/api/admin/people-lists') {
       sessionService.authenticate(req, 'ADMIN');
       return sendJson(res, 200, { peopleLists: eventService.listPeopleLists() });

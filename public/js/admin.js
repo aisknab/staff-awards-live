@@ -13,6 +13,8 @@ let busy = false;
 let hideTally = false;
 let draft = null;
 let creatingNew = false;
+let editingDetails = false;
+let detailsDraft = null;
 let selectedPeopleListId = '';
 let peopleListName = '';
 
@@ -65,8 +67,12 @@ function render() {
   const isConfigMode = creatingNew || !appState?.event || appState.event.status === 'DRAFT';
   if (isConfigMode) {
     ensureDraft();
+    editingDetails = false;
+    detailsDraft = null;
   } else {
     draft = null;
+    if (editingDetails) ensureDetailsDraft();
+    else detailsDraft = null;
   }
 
   const shell = h('main', { class: 'admin-shell' },
@@ -128,6 +134,7 @@ function eventToolbar() {
   return h('section', { class: 'card admin-toolbar' },
     h('div', { class: 'field' }, h('label', { text: 'Event' }), select),
     h('button', { class: 'button secondary', type: 'button', onClick: newEvent, text: 'New event' }),
+    appState?.event && !creatingNew && appState.event.status !== 'DRAFT' ? h('button', { class: 'button secondary', type: 'button', disabled: editingDetails, onClick: editEventDetails, text: 'Edit details' }) : null,
     appState?.event && !creatingNew ? h('a', { class: 'button secondary', href: `/api/admin/export.csv?eventId=${encodeURIComponent(appState.event.id)}`, text: 'Export CSV' }) : null,
   );
 }
@@ -137,6 +144,8 @@ async function selectEvent(event) {
   if (!eventId) return;
   creatingNew = false;
   draft = null;
+  editingDetails = false;
+  detailsDraft = null;
   selectedPeopleListId = '';
   peopleListName = '';
   message = '';
@@ -153,6 +162,8 @@ function newEvent() {
   creatingNew = true;
   connection?.close();
   draft = emptyDraft();
+  editingDetails = false;
+  detailsDraft = null;
   selectedPeopleListId = '';
   peopleListName = '';
   message = '';
@@ -428,6 +439,7 @@ function liveController() {
       participantsPanel(),
     ),
     h('aside', { class: 'side-stack' },
+      eventDetailsPanel(event),
       namedTallyPanel(),
       h('section', { class: 'card admin-card stack' },
         h('h3', { text: 'Display controls' }),
@@ -438,6 +450,103 @@ function liveController() {
       ),
     ),
   );
+}
+
+function detailsDraftFromEvent(event) {
+  return {
+    eventId: event.id,
+    expectedEventVersion: event.version,
+    title: event.title,
+    subtitle: event.subtitle,
+    participantLimit: event.participantLimit,
+  };
+}
+
+function ensureDetailsDraft() {
+  if (!appState?.event) return;
+  if (!detailsDraft || detailsDraft.eventId !== appState.event.id) {
+    detailsDraft = detailsDraftFromEvent(appState.event);
+  }
+}
+
+function editEventDetails() {
+  if (!appState?.event) return;
+  detailsDraft = detailsDraftFromEvent(appState.event);
+  editingDetails = true;
+  message = '';
+  render();
+}
+
+function cancelEditDetails() {
+  editingDetails = false;
+  detailsDraft = null;
+  render();
+}
+
+function eventDetailsPanel(event) {
+  if (editingDetails) {
+    ensureDetailsDraft();
+    return h('section', { class: 'card admin-card stack' },
+      h('div', { class: 'row between' },
+        h('h2', { text: 'Event details' }),
+        h('button', { class: 'button ghost small', type: 'button', disabled: busy, onClick: cancelEditDetails, text: 'Cancel' }),
+      ),
+      h('form', { class: 'stack', onSubmit: saveEventDetails },
+        field('Event title', h('input', { class: 'input', value: detailsDraft.title, maxlength: '100', onInput: (inputEvent) => { detailsDraft.title = inputEvent.target.value; } })),
+        field('Subtitle', h('input', { class: 'input', value: detailsDraft.subtitle, maxlength: '200', onInput: (inputEvent) => { detailsDraft.subtitle = inputEvent.target.value; } })),
+        field('Participant limit', h('input', { class: 'input', type: 'number', min: '2', max: '250', value: detailsDraft.participantLimit, onInput: (inputEvent) => { detailsDraft.participantLimit = Number(inputEvent.target.value); } })),
+        h('div', { class: 'row' },
+          h('button', { class: 'button small', type: 'submit', disabled: busy, text: busy ? 'Saving…' : 'Save details' }),
+          h('button', { class: 'button secondary small', type: 'button', disabled: busy, onClick: cancelEditDetails, text: 'Cancel' }),
+        ),
+      ),
+    );
+  }
+
+  return h('section', { class: 'card admin-card stack' },
+    h('div', { class: 'row between' },
+      h('h2', { text: 'Event details' }),
+      h('button', { class: 'button secondary small', type: 'button', disabled: busy, onClick: editEventDetails, text: 'Edit' }),
+    ),
+    h('div', { class: 'stack' },
+      detailItem('Title', event.title),
+      event.subtitle ? detailItem('Subtitle', event.subtitle) : null,
+      detailItem('Participant limit', event.participantLimit),
+    ),
+  );
+}
+
+function detailItem(label, value) {
+  return h('div', {}, h('div', { class: 'label', text: label }), h('div', { text: value }));
+}
+
+async function saveEventDetails(event) {
+  event.preventDefault();
+  if (busy || !detailsDraft) return;
+  const payload = {
+    eventId: detailsDraft.eventId,
+    expectedEventVersion: detailsDraft.expectedEventVersion,
+    title: detailsDraft.title,
+    subtitle: detailsDraft.subtitle,
+    participantLimit: Number(detailsDraft.participantLimit),
+  };
+  busy = true;
+  message = '';
+  render();
+  try {
+    appState = await api.request('/api/admin/event-details', { method: 'PUT', body: payload });
+    editingDetails = false;
+    detailsDraft = null;
+    message = 'Event details saved.';
+  } catch (error) {
+    message = friendlyError(error);
+    if (error.code === 'CONFLICT') {
+      try { appState = await api.request(`/api/admin/state?eventId=${encodeURIComponent(payload.eventId)}`); } catch {}
+    }
+  } finally {
+    busy = false;
+    render();
+  }
 }
 
 function metrics() {
@@ -610,7 +719,9 @@ function friendlyError(error) {
       NOT_TIED: 'The current result is not tied.',
       CONFLICT: 'Another controller action changed the event. The latest state has been loaded.',
       PEOPLE_LIST_EXISTS: 'A saved people list with that name already exists.',
+      CONFIG_LOCKED: 'Full award and nominee configuration is locked after the lobby opens.',
       INVALID_STATE_TRANSITION: error.message,
+      PARTICIPANT_LIMIT_TOO_LOW: error.message,
       RATE_LIMITED: 'Too many requests. Wait briefly and try again.',
     };
     return map[error.code] ?? error.message;

@@ -97,6 +97,33 @@ export class EventService {
     return this.getAdminEvent(eventId);
   }
 
+  updateDetails(raw) {
+    const input = validateEventDetails(raw);
+    const event = this.getEvent(input.eventId);
+    if (input.expectedEventVersion !== null && event.version !== input.expectedEventVersion) {
+      throw conflict('CONFLICT', 'Event was changed by another admin tab');
+    }
+
+    const activeParticipants = Number(this.db.prepare(`
+      SELECT COUNT(*) AS count FROM participants WHERE event_id = ? AND status = 'ACTIVE'
+    `).get(event.id)?.count ?? 0);
+    if (input.participantLimit < activeParticipants) {
+      throw conflict('PARTICIPANT_LIMIT_TOO_LOW', `Participant limit cannot be lower than ${activeParticipants} active participants`);
+    }
+
+    const timestamp = nowIso();
+    this.db.transaction(() => {
+      this.db.prepare(`
+        UPDATE events
+        SET title = ?, subtitle = ?, participant_limit = ?, version = version + 1, updated_at = ?
+        WHERE id = ?
+      `).run(input.title, input.subtitle, input.participantLimit, timestamp, event.id);
+      this.audit(event.id, 'EVENT_DETAILS_UPDATED', { activeParticipants });
+    });
+
+    return this.getAdminEvent(event.id);
+  }
+
   getAdminEvent(eventId) {
     const event = this.getEvent(eventId);
     const nominees = this.db.prepare(`
@@ -657,6 +684,17 @@ function validateConfig(raw) {
     participantLimit: integer(input.participantLimit ?? 30, 'participantLimit', { min: 2, max: 250 }),
     nominees,
     awards,
+  };
+}
+
+function validateEventDetails(raw) {
+  const input = object(raw);
+  return {
+    eventId: idText(input.eventId, 'eventId'),
+    expectedEventVersion: optionalVersion(input.expectedEventVersion, 'expectedEventVersion'),
+    title: text(input.title, 'title', { max: 100 }),
+    subtitle: text(input.subtitle ?? '', 'subtitle', { required: false, max: 200 }),
+    participantLimit: integer(input.participantLimit ?? 30, 'participantLimit', { min: 2, max: 250 }),
   };
 }
 
