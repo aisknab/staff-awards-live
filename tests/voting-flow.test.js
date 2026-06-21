@@ -87,3 +87,33 @@ test('a participant can change one persisted vote before lock', async (t) => {
   assert.equal(adminState.namedTally.results.find((row) => row.nomineeId === second.id).count, 1);
   assert.equal(adminState.namedTally.results.find((row) => row.nomineeId === first.id).count, 0);
 });
+
+test('admin can reveal an open round and advance to an already-open next question', async (t) => {
+  const ctx = await startTestApp();
+  t.after(() => ctx.stop());
+  const admin = ctx.client();
+  await loginAdmin(admin);
+  let state = await createEvent(admin);
+  state = await openFirstRound(admin, state);
+
+  const participant = ctx.client();
+  const joined = await joinWithCode(participant, state.event.access.manualCode);
+  await participant.json('/api/participant/vote', {
+    method: 'PUT',
+    body: { roundId: joined.round.id, nomineeId: joined.round.nominees[0].id, requestId: crypto.randomUUID(), expectedRoundVersion: joined.round.version },
+  });
+
+  state = await admin.json(`/api/admin/state?eventId=${state.event.id}`);
+  state = await adminAction(admin, state, 'REVEAL_WINNER');
+  assert.equal(state.event.currentRound.status, 'REVEALED');
+  assert.equal(state.event.currentRound.lockedAt !== null, true);
+  let publicState = await participant.json('/api/participant/state');
+  assert.equal(publicState.round.revealed.winnerMode, 'single');
+
+  state = await adminAction(admin, state, 'NEXT_QUESTION');
+  assert.equal(state.event.currentRound.status, 'OPEN');
+  assert.equal(state.event.currentRound.award.title, 'Reply All Hero');
+  publicState = await participant.json('/api/participant/state');
+  assert.equal(publicState.round.status, 'OPEN');
+  assert.equal(publicState.round.award.title, 'Reply All Hero');
+});

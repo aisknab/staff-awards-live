@@ -376,10 +376,11 @@ export class EventService {
       OPEN_VOTING: () => this.openVoting(event, round),
       LOCK_VOTING: () => this.lockVoting(event, round),
       REOPEN_VOTING: () => this.reopenVoting(event, round),
-      REVEAL_WINNER: () => this.reveal(event, round, false),
-      REVEAL_JOINT_WINNERS: () => this.reveal(event, round, true),
+      REVEAL_WINNER: () => this.revealCurrent(event, round, false),
+      REVEAL_JOINT_WINNERS: () => this.revealCurrent(event, round, true),
       START_RUNOFF: () => this.startRunoff(event, round),
       NEXT_AWARD: () => this.nextAward(event, round),
+      NEXT_QUESTION: () => this.nextQuestion(event, round),
       BLANK_DISPLAY: () => this.setBlanked(event, true),
       UNBLANK_DISPLAY: () => this.setBlanked(event, false),
       FINISH_EVENT: () => this.finishEvent(event),
@@ -476,13 +477,45 @@ export class EventService {
     if (allowJoint && summary.winners.length < 2) throw conflict('NOT_TIED', 'The result is not tied');
     const now = nowIso();
     this.db.transaction(() => {
-      this.db.prepare('DELETE FROM revealed_results WHERE round_id = ?').run(round.id);
-      const insert = this.db.prepare(`INSERT INTO revealed_results (round_id, nominee_id, vote_count, is_winner, created_at) VALUES (?, ?, ?, ?, ?)`);
-      const winnerIds = new Set(summary.winners.map((winner) => winner.nomineeId));
-      for (const row of summary.tally) insert.run(round.id, row.nomineeId, row.count, winnerIds.has(row.nomineeId) ? 1 : 0, now);
+      this.persistReveal(round.id, summary, now);
       this.db.prepare(`UPDATE rounds SET status = 'REVEALED', version = version + 1, revealed_at = ? WHERE id = ? AND status = 'LOCKED'`).run(now, round.id);
       this.db.prepare('UPDATE events SET version = version + 1, updated_at = ? WHERE id = ?').run(now, event.id);
     });
+  }
+
+  revealCurrent(event, round, allowJoint) {
+    if (round?.status === 'OPEN') return this.revealOpenRound(event, round);
+    return this.reveal(event, round, allowJoint);
+  }
+
+  revealOpenRound(event, round) {
+    if (event.status !== 'LIVE') throw conflict('INVALID_STATE_TRANSITION', 'The event is not live');
+    requireRound(round);
+    if (round.status !== 'OPEN') throw conflict('INVALID_STATE_TRANSITION', 'Voting must be open to reveal directly');
+    const now = nowIso();
+    const eligible = this.results.participantCount(event.id);
+    this.db.transaction(() => {
+      const locked = this.db.prepare(`
+        UPDATE rounds SET status = 'LOCKED', version = version + 1, locked_at = ?, eligible_participant_count = ?
+        WHERE id = ? AND status = 'OPEN'
+      `).run(now, eligible, round.id);
+      if (Number(locked.changes) !== 1) throw conflict('CONFLICT', 'Round state changed');
+      const summary = this.results.winnerSummary(round.id);
+      this.persistReveal(round.id, summary, now);
+      const revealed = this.db.prepare(`
+        UPDATE rounds SET status = 'REVEALED', version = version + 1, revealed_at = ?
+        WHERE id = ? AND status = 'LOCKED'
+      `).run(now, round.id);
+      if (Number(revealed.changes) !== 1) throw conflict('CONFLICT', 'Round state changed');
+      this.db.prepare('UPDATE events SET version = version + 1, updated_at = ? WHERE id = ?').run(now, event.id);
+    });
+  }
+
+  persistReveal(roundId, summary, timestamp) {
+    this.db.prepare('DELETE FROM revealed_results WHERE round_id = ?').run(roundId);
+    const insert = this.db.prepare(`INSERT INTO revealed_results (round_id, nominee_id, vote_count, is_winner, created_at) VALUES (?, ?, ?, ?, ?)`);
+    const winnerIds = new Set(summary.winners.map((winner) => winner.nomineeId));
+    for (const row of summary.tally) insert.run(roundId, row.nomineeId, row.count, winnerIds.has(row.nomineeId) ? 1 : 0, timestamp);
   }
 
   revealPayload(round) {
@@ -528,6 +561,25 @@ export class EventService {
         const newRound = this.createRound(event.id, next.id, null, nomineeIds, 'PREVIEW');
         this.db.prepare('UPDATE events SET active_round_id = ?, version = version + 1, updated_at = ? WHERE id = ?').run(newRound.id, now, event.id);
       }
+    });
+  }
+
+  nextQuestion(event, round) {
+    if (event.status !== 'LIVE') throw conflict('INVALID_STATE_TRANSITION', 'The event is not live');
+    requireRound(round);
+    if (round.status !== 'REVEALED') throw conflict('INVALID_STATE_TRANSITION', 'Reveal the result before moving on');
+    const now = nowIso();
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE rounds SET status = 'COMPLETE', version = version + 1, completed_at = ? WHERE id = ? AND status = 'REVEALED'`).run(now, round.id);
+      const next = this.nextIncompleteAward(event.id);
+      if (!next) {
+        this.db.prepare(`UPDATE events SET status = 'FINISHED', join_open = 0, active_round_id = NULL, version = version + 1, updated_at = ?, finished_at = ? WHERE id = ?`).run(now, now, event.id);
+        return;
+      }
+      const nomineeIds = this.db.prepare('SELECT nominee_id AS nomineeId FROM award_nominees WHERE award_id = ?').all(next.id).map((row) => row.nomineeId);
+      const newRound = this.createRound(event.id, next.id, null, nomineeIds, 'OPEN');
+      this.db.prepare('UPDATE rounds SET opened_at = ? WHERE id = ?').run(now, newRound.id);
+      this.db.prepare('UPDATE events SET active_round_id = ?, version = version + 1, updated_at = ? WHERE id = ?').run(newRound.id, now, event.id);
     });
   }
 

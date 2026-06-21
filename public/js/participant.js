@@ -5,6 +5,7 @@ import { playRevealBurst } from './common/reveal-effects.js';
 
 const root = document.querySelector('#app');
 const api = new ApiClient();
+const REVEAL_COUNTDOWN_MS = 5000;
 let state = null;
 let connection = null;
 let connectionStatus = 'reconnecting';
@@ -14,6 +15,8 @@ let selectedNomineeId = null;
 let selectionRoundId = null;
 let filterText = '';
 const animatedRevealKeys = new Set();
+let revealCountdown = null;
+let countdownTimer = null;
 
 void initialise();
 
@@ -57,14 +60,16 @@ function connect() {
         message = 'This participant session has ended.';
         connection?.close();
       } else if (type === 'snapshot') {
+        const previousRound = state?.round;
         state = payload;
         api.setCsrf(payload.csrfToken);
+        startCountdownForTransition(previousRound, state.round, 'participant');
       } else if (type === 'presence' && state) {
         state.progress = payload.progress;
       } else if (type === 'vote-progress' && state?.round?.id === payload.roundId) {
         state.round.maskedTally.votesCast = payload.votesCast;
       } else if (type === 'round-revealed' && state?.round?.id === payload.roundId) {
-        scheduleRevealAnimation(revealKeyFromPayload(payload), 'participant');
+        startRevealCountdown(revealKeyFromPayload(payload), payload.roundId, 'participant');
       }
       render();
     },
@@ -145,11 +150,16 @@ async function joinWithCode(event) {
 function screenForState() {
   if (state.event.status === 'FINISHED') return simpleScreen('Event complete', 'Thanks for voting.');
   const round = state.round;
+  if (revealCountdown && revealCountdown.roundId !== round?.id) clearRevealCountdown();
   if (!round) return lobbyScreen();
   if (round.status === 'PREVIEW') return previewScreen(round);
   if (round.status === 'OPEN') return votingScreen(round);
   if (round.status === 'LOCKED') return lockedScreen(round);
-  if (['REVEALED', 'COMPLETE'].includes(round.status)) return revealScreen(round);
+  if (['REVEALED', 'COMPLETE'].includes(round.status)) {
+    const countdownSeconds = secondsRemainingForReveal(revealKeyFromRound(round));
+    if (countdownSeconds) return revealCountdownScreen(round, countdownSeconds);
+    return revealScreen(round);
+  }
   return simpleScreen('Please wait', 'The controller is preparing the next award.');
 }
 
@@ -241,6 +251,14 @@ function lockedScreen(round) {
   );
 }
 
+function revealCountdownScreen(round, seconds) {
+  return h('section', { class: 'participant-countdown', role: 'status', 'aria-live': 'assertive' },
+    h('p', { class: 'eyebrow', text: 'Winner reveal' }),
+    h('h1', { class: 'title', text: round.award.title }),
+    h('div', { class: 'countdown-number', text: seconds }),
+  );
+}
+
 function revealScreen(round) {
   const revealed = round.revealed;
   const winners = revealed?.winners ?? [];
@@ -255,7 +273,7 @@ function revealScreen(round) {
       h('h1', { class: 'title', text: round.award.title }),
       h('div', { class: 'winner-chip-list' }, winners.map((winner) => h('div', { class: 'winner-chip' },
         h('div', { class: 'winner-name', text: winner.name }),
-      winner.subtitle ? h('div', { class: 'winner-subtitle', text: winner.subtitle }) : null,
+        winner.subtitle ? h('div', { class: 'winner-subtitle', text: winner.subtitle }) : null,
         h('div', { class: 'muted', text: `${winnerVoteCount(winner)} vote${winnerVoteCount(winner) === 1 ? '' : 's'} · ${winnerPercentage(winner, revealed.votesCast)}` }),
       ))),
     ),
@@ -277,6 +295,40 @@ function revealKeyFromRound(round) {
 
 function revealKeyFromPayload(payload) {
   return `${payload.roundId}:${payload.winnerMode ?? payload.winners?.length ?? 0}:${(payload.winners ?? []).map((winner) => winner.nomineeId).join(',')}`;
+}
+
+function startCountdownForTransition(previousRound, nextRound, variant) {
+  if (!nextRound || !['REVEALED', 'COMPLETE'].includes(nextRound.status)) return;
+  if (previousRound?.id !== nextRound.id || ['REVEALED', 'COMPLETE'].includes(previousRound?.status)) return;
+  startRevealCountdown(revealKeyFromRound(nextRound), nextRound.id, variant);
+}
+
+function startRevealCountdown(revealKey, roundId, variant) {
+  if (!revealKey || !roundId || animatedRevealKeys.has(revealKey)) return;
+  if (revealCountdown?.key === revealKey) return;
+  clearRevealCountdown();
+  revealCountdown = { key: revealKey, roundId, variant, endsAt: Date.now() + REVEAL_COUNTDOWN_MS };
+  countdownTimer = window.setInterval(() => {
+    if (!revealCountdown) return;
+    if (Date.now() >= revealCountdown.endsAt) clearRevealCountdown();
+    render();
+  }, 200);
+}
+
+function secondsRemainingForReveal(revealKey) {
+  if (!revealCountdown || revealCountdown.key !== revealKey) return 0;
+  const remaining = revealCountdown.endsAt - Date.now();
+  if (remaining <= 0) {
+    clearRevealCountdown();
+    return 0;
+  }
+  return Math.max(1, Math.ceil(remaining / 1000));
+}
+
+function clearRevealCountdown() {
+  if (countdownTimer) window.clearInterval(countdownTimer);
+  countdownTimer = null;
+  revealCountdown = null;
 }
 
 function scheduleRevealAnimation(revealKey, variant) {

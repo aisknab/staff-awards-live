@@ -566,9 +566,9 @@ function metric(value, label) {
 function actionButtons(event, round) {
   const buttons = [];
   const add = (label, actionName, className = 'button') => buttons.push(h('button', { class: className, type: 'button', disabled: busy, onClick: () => action(actionName), text: label }));
-  if (!round && ['LOBBY', 'LIVE'].includes(event.status)) add('Show first award', 'SHOW_AWARD');
+  if (!round && ['LOBBY', 'LIVE'].includes(event.status)) add('Show first question', 'SHOW_AWARD');
   if (round?.status === 'PREVIEW') add('Open voting', 'OPEN_VOTING');
-  if (round?.status === 'OPEN') add('Close voting', 'LOCK_VOTING');
+  if (round?.status === 'OPEN') add('Reveal winner', 'REVEAL_WINNER');
   if (round?.status === 'LOCKED') {
     const decision = round.resultDecision;
     if (decision?.mode === 'tie') buttons.push(tieChoicePanel(round, decision));
@@ -576,11 +576,11 @@ function actionButtons(event, round) {
     else add('Reveal winner', 'REVEAL_WINNER');
     add('Reopen voting', 'REOPEN_VOTING', 'button warning');
   }
-  if (round?.status === 'REVEALED') add('Next award', 'NEXT_AWARD');
+  if (round?.status === 'REVEALED') add(isFinalRevealedQuestion() ? 'Finish event' : 'Next question', 'NEXT_QUESTION');
   if (['LOBBY', 'LIVE'].includes(event.status)) {
     add(event.joinOpen ? 'Close joining' : 'Reopen joining', event.joinOpen ? 'CLOSE_JOINS' : 'REOPEN_JOINS', 'button secondary');
     if (round && ['PREVIEW', 'OPEN', 'LOCKED'].includes(round.status)) add('Reset round', 'RESET_CURRENT_ROUND', 'button danger');
-    add('Finish event', 'FINISH_EVENT', 'button danger');
+    if (round?.status !== 'REVEALED') add('Finish event', 'FINISH_EVENT', 'button danger');
   }
   if (event.status === 'FINISHED') {
     add('Reopen event', 'REOPEN_EVENT');
@@ -588,6 +588,11 @@ function actionButtons(event, round) {
     add('Restart event', 'RESTART_EVENT', 'button danger');
   }
   return buttons;
+}
+
+function isFinalRevealedQuestion() {
+  const progress = appState?.progress ?? {};
+  return Number(progress.completedAwards ?? 0) + 1 >= Number(progress.awardCount ?? 0);
 }
 
 function tieChoicePanel(round, decision) {

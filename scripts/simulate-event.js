@@ -30,11 +30,10 @@ try {
     assert.equal(masked.includes(nominee.name), false);
   }
   state = await admin.json(`/api/admin/state?eventId=${state.event.id}`);
-  state = await adminAction(admin, state, 'LOCK_VOTING');
   state = await adminAction(admin, state, 'REVEAL_WINNER');
   assert.equal(state.event.currentRound.status, 'REVEALED');
-  state = await adminAction(admin, state, 'NEXT_AWARD');
-  state = await adminAction(admin, state, 'OPEN_VOTING');
+  state = await adminAction(admin, state, 'NEXT_QUESTION');
+  assert.equal(state.event.currentRound.status, 'OPEN');
 
   const secondRoundStates = await Promise.all(participants.slice(0, 4).map((client) => client.json('/api/participant/state')));
   const tieTargets = secondRoundStates[0].round.nominees.slice(0, 2).map((nominee) => nominee.id);

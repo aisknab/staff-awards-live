@@ -5,11 +5,14 @@ import { playRevealBurst } from './common/reveal-effects.js';
 
 const root = document.querySelector('#app');
 const api = new ApiClient();
+const REVEAL_COUNTDOWN_MS = 5000;
 let state = null;
 let connection = null;
 let connectionStatus = 'reconnecting';
 let message = '';
 const animatedRevealKeys = new Set();
+let revealCountdown = null;
+let countdownTimer = null;
 
 void initialise();
 
@@ -53,13 +56,15 @@ function connect() {
         message = 'This display link was rotated. Open the new display URL from the controller.';
         connection?.close();
       } else if (type === 'snapshot') {
+        const previousRound = state?.round;
         state = payload;
+        startCountdownForTransition(previousRound, state.round, 'display');
       } else if (type === 'presence' && state) {
         state.progress = payload.progress;
       } else if (type === 'vote-progress' && state?.round?.id === payload.roundId) {
         state.round.maskedTally.votesCast = payload.votesCast;
       } else if (type === 'round-revealed' && state?.round?.id === payload.roundId) {
-        scheduleRevealAnimation(revealKeyFromPayload(payload), 'display');
+        startRevealCountdown(revealKeyFromPayload(payload), payload.roundId, 'display');
       }
       render();
     },
@@ -109,12 +114,17 @@ function render() {
 
 function contentForState() {
   if (state.event.status === 'FINISHED') return panel('Event complete', 'Thanks for taking part.');
-  if (!state.round) return lobby();
   const round = state.round;
+  if (revealCountdown && revealCountdown.roundId !== round?.id) clearRevealCountdown();
+  if (!round) return lobby();
   if (round.status === 'PREVIEW') return panel(round.award.title, round.award.description || 'Voting will open shortly.', round.roundNumber > 1 ? 'Runoff round' : 'Next award');
   if (round.status === 'OPEN') return voting(round, false);
   if (round.status === 'LOCKED') return voting(round, true);
-  if (['REVEALED', 'COMPLETE'].includes(round.status)) return reveal(round);
+  if (['REVEALED', 'COMPLETE'].includes(round.status)) {
+    const countdownSeconds = secondsRemainingForReveal(revealKeyFromRound(round));
+    if (countdownSeconds) return revealCountdownPanel(round, countdownSeconds);
+    return reveal(round);
+  }
   return panel('Please wait', 'The controller is preparing the next award.');
 }
 
@@ -159,6 +169,14 @@ function displayTally(tally) {
   );
 }
 
+function revealCountdownPanel(round, seconds) {
+  return h('div', { class: 'display-panel display-countdown', role: 'status', 'aria-live': 'assertive' },
+    h('p', { class: 'display-kicker', text: 'Winner reveal' }),
+    h('p', { class: 'display-subtitle', text: round.award.title }),
+    h('div', { class: 'display-countdown-number', text: seconds }),
+  );
+}
+
 function reveal(round) {
   const revealed = round.revealed;
   const winners = revealed?.winners ?? [];
@@ -195,6 +213,40 @@ function revealKeyFromRound(round) {
 
 function revealKeyFromPayload(payload) {
   return `${payload.roundId}:${payload.winnerMode ?? payload.winners?.length ?? 0}:${(payload.winners ?? []).map((winner) => winner.nomineeId).join(',')}`;
+}
+
+function startCountdownForTransition(previousRound, nextRound, variant) {
+  if (!nextRound || !['REVEALED', 'COMPLETE'].includes(nextRound.status)) return;
+  if (previousRound?.id !== nextRound.id || ['REVEALED', 'COMPLETE'].includes(previousRound?.status)) return;
+  startRevealCountdown(revealKeyFromRound(nextRound), nextRound.id, variant);
+}
+
+function startRevealCountdown(revealKey, roundId, variant) {
+  if (!revealKey || !roundId || animatedRevealKeys.has(revealKey)) return;
+  if (revealCountdown?.key === revealKey) return;
+  clearRevealCountdown();
+  revealCountdown = { key: revealKey, roundId, variant, endsAt: Date.now() + REVEAL_COUNTDOWN_MS };
+  countdownTimer = window.setInterval(() => {
+    if (!revealCountdown) return;
+    if (Date.now() >= revealCountdown.endsAt) clearRevealCountdown();
+    render();
+  }, 200);
+}
+
+function secondsRemainingForReveal(revealKey) {
+  if (!revealCountdown || revealCountdown.key !== revealKey) return 0;
+  const remaining = revealCountdown.endsAt - Date.now();
+  if (remaining <= 0) {
+    clearRevealCountdown();
+    return 0;
+  }
+  return Math.max(1, Math.ceil(remaining / 1000));
+}
+
+function clearRevealCountdown() {
+  if (countdownTimer) window.clearInterval(countdownTimer);
+  countdownTimer = null;
+  revealCountdown = null;
 }
 
 function scheduleRevealAnimation(revealKey, variant) {

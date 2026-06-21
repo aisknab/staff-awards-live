@@ -212,7 +212,7 @@ export function createApplication(options = {}) {
       const freshEvent = eventService.getEvent(eventId);
       const freshRound = eventService.getCurrentRound(freshEvent);
 
-      if (['SHOW_AWARD', 'OPEN_VOTING', 'REOPEN_VOTING', 'START_RUNOFF', 'NEXT_AWARD', 'RESET_CURRENT_ROUND'].includes(action) && freshRound) {
+      if (['SHOW_AWARD', 'OPEN_VOTING', 'REOPEN_VOTING', 'START_RUNOFF', 'NEXT_AWARD', 'NEXT_QUESTION', 'RESET_CURRENT_ROUND'].includes(action) && freshRound) {
         masked.initialise(freshRound);
       }
       if (action === 'LOCK_VOTING' && freshRound) masked.force(freshRound);

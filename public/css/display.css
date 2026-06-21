@@ -19,6 +19,28 @@ body { overflow: hidden; background: radial-gradient(circle at 50% 0%, #282c3b 0
 .display-tally .tally-row { grid-template-columns: 160px 1fr 100px; gap: 1.5rem; }
 .display-tally .tally-progress { height: clamp(22px, 2.2vw, 40px); }
 .display-tally .tally-label, .display-tally .tally-count { font-size: clamp(1rem, 1.5vw, 1.8rem); }
+.display-countdown {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: clamp(1rem, 2vh, 2rem);
+  height: 100%;
+}
+.display-countdown-number {
+  display: grid;
+  place-items: center;
+  width: min(42vh, 34vw);
+  aspect-ratio: 1;
+  border: 2px solid rgba(255, 209, 102, .55);
+  border-radius: 999px;
+  background: rgba(255, 209, 102, .1);
+  box-shadow: 0 0 130px rgba(255, 209, 102, .24), 0 26px 90px rgba(0, 0, 0, .36);
+  color: var(--warning);
+  font-size: min(24vh, 20vw);
+  line-height: 1;
+  font-weight: 950;
+  animation: countdown-pulse .95s cubic-bezier(.2,.8,.2,1) infinite;
+}
 .display-winner {
   max-height: 100%;
   animation: reveal-pop .8s cubic-bezier(.2,.8,.2,1) both;

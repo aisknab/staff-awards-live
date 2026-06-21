@@ -83,6 +83,27 @@ test('three-way tie persists every joint winner', async (t) => {
   assert.deepEqual(new Set(revealed.round.revealed.winners.map((winner) => winner.nomineeId)), new Set(tied.map((nominee) => nominee.id)));
 });
 
+test('revealing an open tied round defaults to joint winners', async (t) => {
+  const ctx = await startTestApp();
+  t.after(() => ctx.stop());
+  const admin = ctx.client();
+  await loginAdmin(admin);
+  let state = await createEvent(admin);
+  state = await openFirstRound(admin, state);
+
+  const clients = [ctx.client(), ctx.client()];
+  const joined = await Promise.all(clients.map((client) => joinWithCode(client, state.event.access.manualCode)));
+  const tied = joined[0].round.nominees.slice(0, 2);
+  await voteRound(clients, joined, [tied[0].id, tied[1].id]);
+
+  state = await admin.json(`/api/admin/state?eventId=${state.event.id}`);
+  state = await adminAction(admin, state, 'REVEAL_WINNER');
+  assert.equal(state.event.currentRound.status, 'REVEALED');
+  const revealed = await clients[0].json('/api/participant/state');
+  assert.equal(revealed.round.revealed.winnerMode, 'joint');
+  assert.deepEqual(new Set(revealed.round.revealed.winners.map((winner) => winner.nomineeId)), new Set(tied.map((nominee) => nominee.id)));
+});
+
 test('no-vote round reveals no winner', async (t) => {
   const ctx = await startTestApp();
   t.after(() => ctx.stop());
