@@ -1,0 +1,22 @@
+[Unit]
+Description=Staff Awards Live Voting
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+Group=YOUR_GROUP
+WorkingDirectory=/srv/staff-awards
+EnvironmentFile=/etc/staff-awards.env
+ExecStart=/home/YOUR_USER/.nvm/versions/node/v24.17.0/bin/node /srv/staff-awards/src/server.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/staff-awards /var/backups/staff-awards
+
+[Install]
+WantedBy=multi-user.target

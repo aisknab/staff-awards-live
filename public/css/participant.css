@@ -1,0 +1,36 @@
+.participant-app { min-height: 100dvh; padding: max(1rem, env(safe-area-inset-top)) 1rem max(1.5rem, env(safe-area-inset-bottom)); }
+.participant-shell { width: min(680px, 100%); margin: 0 auto; display: grid; gap: 1rem; }
+.participant-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .25rem .15rem; }
+.brand { font-weight: 900; letter-spacing: -.02em; }
+.participant-card { padding: clamp(1.2rem, 4vw, 2rem); }
+.hero { text-align: center; padding-block: clamp(1.7rem, 7vw, 3rem); }
+.hero .title { font-size: clamp(2rem, 10vw, 4rem); }
+.join-card { margin-top: 8vh; }
+.join-form { margin-top: 1.5rem; display: grid; gap: .85rem; }
+.code-input { text-transform: uppercase; letter-spacing: .16em; text-align: center; font-weight: 850; font-size: 1.25rem; }
+.status-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .7rem; margin-top: 1.2rem; }
+.metric { padding: 1rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; }
+.metric strong { display: block; font-size: 1.55rem; }
+.metric span { color: var(--muted); font-size: .83rem; }
+.search-wrap { position: sticky; top: .4rem; z-index: 2; padding-block: .3rem; background: linear-gradient(var(--bg), transparent); }
+.nominee-list { display: grid; gap: .65rem; }
+.nominee-card {
+  width: 100%; min-height: 62px; display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+  border: 1px solid var(--border); border-radius: 14px; padding: .9rem 1rem; background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer;
+}
+.nominee-card.selected { border-color: var(--accent-strong); background: rgba(123,140,255,.17); box-shadow: 0 0 0 2px rgba(123,140,255,.18); }
+.nominee-name { font-weight: 800; }
+.nominee-subtitle { display: block; color: var(--muted); font-size: .83rem; margin-top: .15rem; }
+.nominee-check { width: 24px; height: 24px; border: 2px solid var(--border); border-radius: 50%; display: grid; place-items: center; flex: none; }
+.selected .nominee-check { border-color: var(--accent-strong); background: var(--accent); }
+.selected .nominee-check::after { content: "✓"; color: white; font-weight: 900; }
+.vote-footer { position: sticky; bottom: max(.5rem, env(safe-area-inset-bottom)); padding: .75rem 0 0; background: linear-gradient(transparent, var(--bg) 30%); }
+.vote-footer .button { width: 100%; }
+.reveal-card { text-align: center; animation: reveal-pop .65s cubic-bezier(.2,.8,.2,1) both; }
+.winner-name { margin: .6rem 0; font-size: clamp(2.5rem, 12vw, 5rem); line-height: .95; letter-spacing: -.05em; }
+.winner-subtitle { color: var(--muted); font-size: 1.05rem; }
+.confetti-line { font-size: 2rem; letter-spacing: .3em; margin-bottom: 1rem; }
+@media (max-width: 440px) {
+  .tally-row { grid-template-columns: 70px 1fr 38px; gap: .55rem; }
+  .participant-card { border-radius: 15px; }
+}
