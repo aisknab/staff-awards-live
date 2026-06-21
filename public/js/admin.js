@@ -60,7 +60,8 @@ function renderConnectionBadge() {
 
 function render() {
   if (!authenticated) return renderLogin();
-  if (creatingNew || appState?.event?.status === 'DRAFT') {
+  const isConfigMode = creatingNew || !appState?.event || appState.event.status === 'DRAFT';
+  if (isConfigMode) {
     ensureDraft();
   } else {
     draft = null;
@@ -70,7 +71,7 @@ function render() {
     adminHeader(),
     message ? h('div', { class: 'error-banner', text: message }) : null,
     eventToolbar(),
-    creatingNew || appState?.event?.status === 'DRAFT' ? configEditor() : liveController(),
+    isConfigMode ? configEditor() : liveController(),
   );
   clear(root, shell);
 }
@@ -154,7 +155,7 @@ function newEvent() {
 
 function ensureDraft() {
   if (draft) return;
-  draft = creatingNew ? emptyDraft() : draftFromEvent(appState.event);
+  draft = creatingNew || !appState?.event ? emptyDraft() : draftFromEvent(appState.event);
 }
 
 function emptyDraft() {
@@ -194,11 +195,12 @@ function parsedNominees() {
 }
 
 function configEditor() {
+  const isNewEvent = creatingNew || !appState?.event;
   const nominees = parsedNominees();
   const section = h('section', { class: 'card admin-card stack' },
     h('div', { class: 'row between' },
-      h('div', {}, h('p', { class: 'eyebrow', text: creatingNew ? 'New event' : 'Draft event' }), h('h1', { class: 'title', text: creatingNew ? 'Configure event' : draft.title || 'Configure event' })),
-      !creatingNew && appState.event ? h('button', { class: 'button', type: 'button', disabled: busy, onClick: () => action('OPEN_LOBBY'), text: 'Open lobby' }) : null,
+      h('div', {}, h('p', { class: 'eyebrow', text: isNewEvent ? 'New event' : 'Draft event' }), h('h1', { class: 'title', text: isNewEvent ? 'Configure event' : draft.title || 'Configure event' })),
+      !creatingNew && appState?.event ? h('button', { class: 'button', type: 'button', disabled: busy, onClick: () => action('OPEN_LOBBY'), text: 'Open lobby' }) : null,
     ),
     h('div', { class: 'config-grid' },
       h('div', { class: 'stack' },
