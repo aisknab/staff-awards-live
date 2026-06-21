@@ -182,6 +182,9 @@ export function createApplication(options = {}) {
         sessionService.revokeEventRole(eventId, 'DISPLAY');
         hub.closeWhere((connection) => connection.eventId === eventId && connection.role === 'DISPLAY');
       }
+      if (action === 'RESTART_EVENT') {
+        hub.closeWhere((connection) => connection.eventId === eventId && connection.role === 'PARTICIPANT');
+      }
       logger.info('Admin event action', { eventId, action });
       hub.broadcastSnapshot(eventId);
       return sendJson(res, 200, buildAdminState(session, eventId));

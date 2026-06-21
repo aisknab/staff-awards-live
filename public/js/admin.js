@@ -315,7 +315,7 @@ function liveController() {
       h('section', { class: 'card admin-card stack' },
         h('h3', { text: 'Display controls' }),
         h('div', { class: 'control-grid' },
-          h('button', { class: 'button secondary', type: 'button', onClick: () => action(event.displayBlanked ? 'UNBLANK_DISPLAY' : 'BLANK_DISPLAY'), text: event.displayBlanked ? 'Unblank display' : 'Blank display' }),
+          ['LOBBY', 'LIVE'].includes(event.status) ? h('button', { class: 'button secondary', type: 'button', onClick: () => action(event.displayBlanked ? 'UNBLANK_DISPLAY' : 'BLANK_DISPLAY'), text: event.displayBlanked ? 'Unblank display' : 'Blank display' }) : null,
           h('button', { class: 'button warning', type: 'button', onClick: () => action('ROTATE_DISPLAY_TOKEN'), text: 'Rotate display link' }),
         ),
       ),
@@ -355,6 +355,10 @@ function actionButtons(event, round) {
     if (round && ['PREVIEW', 'OPEN', 'LOCKED'].includes(round.status)) add('Reset round', 'RESET_CURRENT_ROUND', 'button danger');
     add('Finish event', 'FINISH_EVENT', 'button danger');
   }
+  if (event.status === 'FINISHED') {
+    add('Reopen event', 'REOPEN_EVENT');
+    add('Restart event', 'RESTART_EVENT', 'button danger');
+  }
   return buttons;
 }
 
@@ -363,6 +367,11 @@ async function action(actionName) {
   const round = appState.event.currentRound;
   if (['REVEAL_WINNER', 'REVEAL_JOINT_WINNERS'].includes(actionName) && !confirm('Reveal the result to every connected screen?')) return;
   if (actionName === 'FINISH_EVENT' && !confirm('Finish this event? No further votes will be accepted.')) return;
+  if (actionName === 'REOPEN_EVENT' && !confirm('Reopen this event? Existing results will be kept and joining will reopen.')) return;
+  if (actionName === 'RESTART_EVENT') {
+    const typed = prompt(`Type the event title to clear participants, votes, and results, then return to the lobby:\n${appState.event.title}`);
+    if (typed !== appState.event.title) return;
+  }
   if (actionName === 'ROTATE_DISPLAY_TOKEN' && !confirm('Rotate the display link and disconnect existing displays?')) return;
   if (actionName === 'ROTATE_JOIN_TOKEN' && !confirm('Rotate the participant link and manual code? Existing participants will stay connected.')) return;
   if (actionName === 'RESET_CURRENT_ROUND') {

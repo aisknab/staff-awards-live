@@ -257,6 +257,8 @@ export class EventService {
       BLANK_DISPLAY: () => this.setBlanked(event, true),
       UNBLANK_DISPLAY: () => this.setBlanked(event, false),
       FINISH_EVENT: () => this.finishEvent(event),
+      REOPEN_EVENT: () => this.reopenEvent(event),
+      RESTART_EVENT: () => this.restartEvent(event),
       RESET_CURRENT_ROUND: () => this.resetRound(event, round),
       ROTATE_JOIN_TOKEN: () => this.rotateToken(event, 'join'),
       ROTATE_DISPLAY_TOKEN: () => this.rotateToken(event, 'display'),
@@ -270,8 +272,7 @@ export class EventService {
 
   openLobby(event) {
     if (event.status !== 'DRAFT') throw conflict('INVALID_STATE_TRANSITION', 'Only draft events can open the lobby');
-    const active = this.db.prepare("SELECT id FROM events WHERE status IN ('LOBBY','LIVE') AND id <> ? LIMIT 1").get(event.id);
-    if (active) throw conflict('ACTIVE_EVENT_EXISTS', 'Another event is already active');
+    this.requireNoOtherActiveEvent(event);
     const counts = this.db.prepare(`SELECT
       (SELECT COUNT(*) FROM awards WHERE event_id = ?) AS awards,
       (SELECT COUNT(*) FROM nominees WHERE event_id = ?) AS nominees
@@ -406,6 +407,43 @@ export class EventService {
     });
   }
 
+  reopenEvent(event) {
+    if (event.status !== 'FINISHED') throw conflict('INVALID_STATE_TRANSITION', 'Only finished events can be reopened');
+    this.requireNoOtherActiveEvent(event);
+    const now = nowIso();
+    const round = this.roundFromLatestManualFinish(event.id);
+    const status = round && (round.opened_at || round.revealed_at || this.hasOpenedRounds(event.id, round.id)) ? 'LIVE' : 'LOBBY';
+    const roundStatus = round?.revealed_at ? 'REVEALED' : 'PREVIEW';
+    this.db.transaction(() => {
+      if (round) {
+        this.db.prepare(`
+          UPDATE rounds SET status = ?, version = version + 1, completed_at = NULL
+          WHERE id = ? AND event_id = ? AND status = 'COMPLETE'
+        `).run(roundStatus, round.id, event.id);
+      }
+      this.db.prepare(`
+        UPDATE events SET status = ?, join_open = 1, active_round_id = ?,
+          display_blanked = 0, version = version + 1, updated_at = ?, finished_at = NULL
+        WHERE id = ? AND status = 'FINISHED'
+      `).run(status, round?.id ?? null, now, event.id);
+    });
+  }
+
+  restartEvent(event) {
+    if (event.status !== 'FINISHED') throw conflict('INVALID_STATE_TRANSITION', 'Only finished events can be restarted');
+    this.requireNoOtherActiveEvent(event);
+    const now = nowIso();
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM rounds WHERE event_id = ?').run(event.id);
+      this.db.prepare('DELETE FROM participants WHERE event_id = ?').run(event.id);
+      this.db.prepare(`
+        UPDATE events SET status = 'LOBBY', join_open = 1, active_round_id = NULL,
+          display_blanked = 0, version = version + 1, updated_at = ?, finished_at = NULL
+        WHERE id = ? AND status = 'FINISHED'
+      `).run(now, event.id);
+    });
+  }
+
   setBlanked(event, blanked) {
     if (!['LOBBY', 'LIVE'].includes(event.status)) throw conflict('INVALID_STATE_TRANSITION', 'The display can only be blanked during an active event');
     this.db.prepare('UPDATE events SET display_blanked = ?, version = version + 1, updated_at = ? WHERE id = ?').run(blanked ? 1 : 0, nowIso(), event.id);
@@ -427,6 +465,35 @@ export class EventService {
     const field = purpose === 'join' ? 'join_token_version' : 'display_token_version';
     const manual = purpose === 'join' ? ', manual_code_version = manual_code_version + 1' : '';
     this.db.prepare(`UPDATE events SET ${field} = ${field} + 1 ${manual}, version = version + 1, updated_at = ? WHERE id = ?`).run(nowIso(), event.id);
+  }
+
+  requireNoOtherActiveEvent(event) {
+    const active = this.db.prepare("SELECT id FROM events WHERE status IN ('LOBBY','LIVE') AND id <> ? LIMIT 1").get(event.id);
+    if (active) throw conflict('ACTIVE_EVENT_EXISTS', 'Another event is already active');
+  }
+
+  roundFromLatestManualFinish(eventId) {
+    const row = this.db.prepare(`
+      SELECT action, metadata_json AS metadataJson
+      FROM audit_log
+      WHERE event_id = ?
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT 1
+    `).get(eventId);
+    if (row?.action !== 'FINISH_EVENT') return null;
+    let metadata;
+    try { metadata = JSON.parse(row.metadataJson); } catch { return null; }
+    if (!metadata?.roundId) return null;
+    const round = this.getRound(metadata.roundId);
+    return round?.event_id === eventId && round.status === 'COMPLETE' ? round : null;
+  }
+
+  hasOpenedRounds(eventId, excludeRoundId) {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count FROM rounds
+      WHERE event_id = ? AND id <> ? AND opened_at IS NOT NULL
+    `).get(eventId, excludeRoundId);
+    return Number(row?.count ?? 0) > 0;
   }
 
   nextIncompleteAward(eventId) {
