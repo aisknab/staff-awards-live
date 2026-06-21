@@ -583,6 +583,7 @@ function actionButtons(event, round) {
   }
   if (event.status === 'FINISHED') {
     add('Reopen event', 'REOPEN_EVENT');
+    add('Revise choices/questions', 'REVISE_FINISHED_CONFIG', 'button warning');
     add('Restart event', 'RESTART_EVENT', 'button danger');
   }
   return buttons;
@@ -596,6 +597,10 @@ async function action(actionName) {
   if (actionName === 'REOPEN_EVENT' && !confirm('Reopen this event? Existing results will be kept and joining will reopen.')) return;
   if (actionName === 'RESTART_EVENT') {
     const typed = prompt(`Type the event title to clear participants, votes, and results, then return to the lobby:\n${appState.event.title}`);
+    if (typed !== appState.event.title) return;
+  }
+  if (actionName === 'REVISE_FINISHED_CONFIG') {
+    const typed = prompt(`Type the event title to clear participants, votes, and results, then return to draft configuration:\n${appState.event.title}`);
     if (typed !== appState.event.title) return;
   }
   if (actionName === 'ROTATE_DISPLAY_TOKEN' && !confirm('Rotate the display link and disconnect existing displays?')) return;

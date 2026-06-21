@@ -223,6 +223,10 @@ export function createApplication(options = {}) {
       if (action === 'RESTART_EVENT') {
         hub.closeWhere((connection) => connection.eventId === eventId && connection.role === 'PARTICIPANT');
       }
+      if (action === 'REVISE_FINISHED_CONFIG') {
+        sessionService.revokeEventRole(eventId, 'DISPLAY');
+        hub.closeWhere((connection) => connection.eventId === eventId && ['PARTICIPANT', 'DISPLAY'].includes(connection.role));
+      }
       logger.info('Admin event action', { eventId, action });
       hub.broadcastSnapshot(eventId);
       return sendJson(res, 200, buildAdminState(session, eventId));

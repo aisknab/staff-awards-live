@@ -100,6 +100,67 @@ test('event details can be edited after the lobby opens without rewriting config
   assert.equal(participantState.event.title, 'Renamed Awards');
 });
 
+test('finished event can return to draft so nominees and questions can be revised for the next run', async (t) => {
+  const ctx = await startTestApp();
+  t.after(() => ctx.stop());
+  const admin = ctx.client();
+  await loginAdmin(admin);
+  let state = await createEvent(admin, {
+    awards: [{ title: 'First question', description: 'Original wording', eligibleNomineeKeys: ['n1', 'n2', 'n3', 'n4'] }],
+  });
+
+  state = await openFirstRound(admin, state);
+  const participant = ctx.client();
+  const joined = await joinWithCode(participant, state.event.access.manualCode);
+  await participant.json('/api/participant/vote', {
+    method: 'PUT',
+    body: {
+      roundId: joined.round.id,
+      nomineeId: joined.round.nominees[0].id,
+      requestId: crypto.randomUUID(),
+      expectedRoundVersion: joined.round.version,
+    },
+  });
+
+  state = await admin.json(`/api/admin/state?eventId=${state.event.id}`);
+  state = await adminAction(admin, state, 'LOCK_VOTING');
+  state = await adminAction(admin, state, 'REVEAL_WINNER');
+  state = await adminAction(admin, state, 'NEXT_AWARD');
+  assert.equal(state.event.status, 'FINISHED');
+  assert.equal(state.progress.registeredParticipants, 1);
+  assert.equal(state.progress.completedAwards, 1);
+
+  state = await adminAction(admin, state, 'REVISE_FINISHED_CONFIG');
+  assert.equal(state.event.status, 'DRAFT');
+  assert.equal(state.event.joinOpen, false);
+  assert.equal(state.event.currentRound, null);
+  assert.equal(state.progress.registeredParticipants, 0);
+  assert.equal(state.progress.completedAwards, 0);
+  assert.equal(state.participants.length, 0);
+
+  state = await admin.json('/api/admin/event-config', {
+    method: 'PUT',
+    body: {
+      eventId: state.event.id,
+      expectedEventVersion: state.event.version,
+      title: 'Revised Awards',
+      subtitle: 'Next run',
+      participantLimit: 20,
+      nominees: [
+        { key: 'n1', displayName: 'Alex Smith', subtitle: 'Sales' },
+        { key: 'n2', displayName: 'Blair Chen', subtitle: 'Engineering' },
+        { key: 'n3', displayName: 'Jordan Vale', subtitle: 'Support' },
+      ],
+      awards: [{ title: 'Improved question', description: 'Clearer wording', eligibleNomineeKeys: ['n1', 'n2', 'n3'] }],
+    },
+  });
+
+  assert.equal(state.event.status, 'DRAFT');
+  assert.equal(state.event.title, 'Revised Awards');
+  assert.deepEqual(state.event.nominees.map((nominee) => nominee.displayName), ['Alex Smith', 'Blair Chen', 'Jordan Vale']);
+  assert.deepEqual(state.event.awards.map((award) => award.title), ['Improved question']);
+});
+
 test('restarting a finished event clears participants and prior results', async (t) => {
   const ctx = await startTestApp();
   t.after(() => ctx.stop());

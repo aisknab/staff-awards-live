@@ -348,6 +348,7 @@ export class EventService {
       FINISH_EVENT: () => this.finishEvent(event),
       REOPEN_EVENT: () => this.reopenEvent(event),
       RESTART_EVENT: () => this.restartEvent(event),
+      REVISE_FINISHED_CONFIG: () => this.reviseFinishedConfig(event),
       RESET_CURRENT_ROUND: () => this.resetRound(event, round),
       ROTATE_JOIN_TOKEN: () => this.rotateToken(event, 'join'),
       ROTATE_DISPLAY_TOKEN: () => this.rotateToken(event, 'display'),
@@ -527,6 +528,20 @@ export class EventService {
       this.db.prepare('DELETE FROM participants WHERE event_id = ?').run(event.id);
       this.db.prepare(`
         UPDATE events SET status = 'LOBBY', join_open = 1, active_round_id = NULL,
+          display_blanked = 0, version = version + 1, updated_at = ?, finished_at = NULL
+        WHERE id = ? AND status = 'FINISHED'
+      `).run(now, event.id);
+    });
+  }
+
+  reviseFinishedConfig(event) {
+    if (event.status !== 'FINISHED') throw conflict('INVALID_STATE_TRANSITION', 'Only finished events can be revised');
+    const now = nowIso();
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM rounds WHERE event_id = ?').run(event.id);
+      this.db.prepare('DELETE FROM participants WHERE event_id = ?').run(event.id);
+      this.db.prepare(`
+        UPDATE events SET status = 'DRAFT', join_open = 0, active_round_id = NULL,
           display_blanked = 0, version = version + 1, updated_at = ?, finished_at = NULL
         WHERE id = ? AND status = 'FINISHED'
       `).run(now, event.id);
