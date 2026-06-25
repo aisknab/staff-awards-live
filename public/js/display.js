@@ -17,6 +17,9 @@ let revealCountdown = null;
 let countdownTimer = null;
 let specialAwardCountdown = null;
 let specialAwardTimer = null;
+let roundTimer = null;
+let roundServerOffsetMs = 0;
+let roundServerTimeSource = '';
 
 void initialise();
 
@@ -62,6 +65,7 @@ function connect() {
         message = 'This display link was rotated. Open the new display URL from the controller.';
         connection?.close();
         clearSpecialAwardCountdown();
+        clearRoundTimer();
       } else if (type === 'snapshot') {
         const previousRound = state?.round;
         const previousSpecialAward = state?.specialAward;
@@ -71,7 +75,9 @@ function connect() {
       } else if (type === 'presence' && state) {
         state.progress = payload.progress;
       } else if (type === 'vote-progress' && state?.round?.id === payload.roundId) {
-        state.round.maskedTally.votesCast = payload.votesCast;
+        if (payload.maskedTally) state.round.maskedTally = payload.maskedTally;
+        else if (state.round.maskedTally) state.round.maskedTally.votesCast = payload.votesCast;
+        state.round.serverTime = payload.serverTime ?? state.round.serverTime;
       } else if (type === 'round-revealed' && state?.round?.id === payload.roundId) {
         startRevealCountdown(revealKeyFromPayload(payload), payload.roundId, 'display');
       }
@@ -90,6 +96,7 @@ function renderStatus() {
 
 function render() {
   if (!state) {
+    clearRoundTimer();
     clear(root, h('main', { class: 'display-screen' },
       h('div'),
       h('section', { class: 'display-main' }, h('div', { class: 'display-panel' },
@@ -102,6 +109,7 @@ function render() {
     ));
     return;
   }
+  syncRoundTimer(state.round);
   document.title = `${state.event.title} · Display`;
   if (state.event.displayBlanked) {
     clear(root, h('div', { class: 'blank-screen', 'aria-label': 'Display blanked' }));
@@ -159,12 +167,15 @@ function lobby() {
 
 function voting(round, locked) {
   const tally = round.maskedTally;
+  const expired = roundVotingExpired(round);
+  const closed = locked || expired;
   return h('div', { class: 'display-panel' },
-    h('p', { class: 'display-kicker', text: locked ? 'Voting closed' : round.roundNumber > 1 ? 'Runoff voting' : 'Vote now' }),
+    h('p', { class: 'display-kicker', text: closed ? 'Voting closed' : round.roundNumber > 1 ? 'Runoff voting' : 'Vote now' }),
     h('h1', { class: 'display-title', text: round.award.title }),
     round.award.description ? h('p', { class: 'display-subtitle', text: round.award.description }) : null,
+    round.status === 'OPEN' ? displayVoteTimer(round) : null,
     displayTally(tally),
-    locked ? h('p', { class: 'display-subtitle', text: 'Winner about to be revealed…' }) : null,
+    closed ? h('p', { class: 'display-subtitle', text: 'Winner about to be revealed...' }) : null,
   );
 }
 
@@ -183,6 +194,56 @@ function displayTally(tally) {
     )),
     h('p', { class: 'display-subtitle', text: statusText }),
   );
+}
+
+function displayVoteTimer(round) {
+  const seconds = secondsRemainingForRound(round);
+  if (!Number.isFinite(seconds)) return null;
+  const expired = seconds <= 0;
+  return h('div', { class: 'round-timer display-round-timer' + (expired ? ' expired' : ''), role: 'timer' },
+    h('span', { class: 'round-timer-label', text: expired ? 'Time up' : 'Time left' }),
+    h('strong', { class: 'round-timer-value', text: formatRoundSeconds(seconds) }),
+  );
+}
+
+function syncRoundTimer(round) {
+  syncRoundClock(round);
+  const seconds = secondsRemainingForRound(round);
+  const shouldRun = round?.status === 'OPEN' && Number.isFinite(seconds) && seconds > 0;
+  if (shouldRun && !roundTimer) roundTimer = window.setInterval(render, 250);
+  if (!shouldRun) clearRoundTimer();
+}
+
+function syncRoundClock(round) {
+  const value = round?.serverTime ?? round?.maskedTally?.serverTime ?? '';
+  const serverTime = Date.parse(value);
+  const source = round?.id ? round.id + ':' + value : value;
+  if (Number.isFinite(serverTime) && source !== roundServerTimeSource) {
+    roundServerTimeSource = source;
+    roundServerOffsetMs = serverTime - Date.now();
+  }
+}
+
+function roundVotingExpired(round) {
+  const seconds = secondsRemainingForRound(round);
+  return round?.status === 'OPEN' && Number.isFinite(seconds) && seconds <= 0;
+}
+
+function secondsRemainingForRound(round) {
+  const closesAt = Date.parse(round?.voteClosesAt ?? '');
+  if (!Number.isFinite(closesAt)) return NaN;
+  return Math.max(0, Math.ceil((closesAt - (Date.now() + roundServerOffsetMs)) / 1000));
+}
+
+function formatRoundSeconds(totalSeconds) {
+  const seconds = Math.max(0, Number(totalSeconds) || 0);
+  const minutes = Math.floor(seconds / 60);
+  return minutes + ':' + String(seconds % 60).padStart(2, '0');
+}
+
+function clearRoundTimer() {
+  if (roundTimer) window.clearInterval(roundTimer);
+  roundTimer = null;
 }
 
 function revealCountdownPanel(round, seconds) {

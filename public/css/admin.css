@@ -91,3 +91,6 @@ th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-s
   .tie-list li { grid-template-columns: 1fr; gap: .25rem; }
   .tie-vote-count { text-align: left; }
 }
+
+.admin-round-timer { background: rgba(255, 250, 247, .86); }
+.admin-round-timer .round-timer-value { font-size: 1.25rem; }

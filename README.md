@@ -136,18 +136,19 @@ Production startup fails rather than silently inventing missing secrets.
 2. Create an event.
 3. Load a saved people list or paste one nominee per line. Add an optional team after `|`.
 4. Save or update the people list if it should be reused for future events.
-5. Add and order the awards, then choose the eligible nominees for each.
-6. Save the draft and open the lobby.
-7. Open the private presentation link on the projector or shared-screen device.
-8. Show the participant QR code and manual event code.
-9. Show the first award, then open voting.
-10. Watch the private named tally while public clients receive only masked counts.
-11. Close voting.
-12. Reveal the winner, reveal joint winners, or start a runoff when tied.
-13. Move to the next award.
-14. Export the final CSV after the event.
+5. Set the voting timer. The default is 45 seconds and can be changed per event.
+6. Add and order the awards, then choose the eligible nominees for each.
+7. Save the draft and open the lobby.
+8. Open the private presentation link on the projector or shared-screen device.
+9. Show the participant QR code and manual event code.
+10. Show the first award, then open voting.
+11. Watch the private named tally while the shared display shows live anonymous tallies only.
+12. When the timer reaches zero, participants can no longer submit or change votes.
+13. Reveal the winner, reveal joint winners, or start a runoff when tied.
+14. Move to the next award.
+15. Export the final CSV after the event.
 
-Reveal and destructive actions execute immediately from the controller UI. A revealed round cannot be reopened or reset. A finished event can be reopened to keep existing participants and results, or restarted from the lobby with the same configuration after clearing participants, rounds, votes, and revealed results.
+Reveal and destructive actions execute immediately from the controller UI. Voting opens with the event timer and late votes are rejected server-side after the deadline. A revealed round cannot be reopened or reset. A finished event can be reopened to keep existing participants and results, or restarted from the lobby with the same configuration after clearing participants, rounds, votes, and revealed results.
 
 ## Masking model
 

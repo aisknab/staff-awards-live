@@ -20,6 +20,8 @@ export class VotingService {
       if (!round) throw notFound('Voting round not found');
       if (round.event_id !== session.event_id) throw forbidden();
       if (round.status !== 'OPEN') throw conflict('ROUND_LOCKED', 'Voting is closed');
+      const closesAt = Date.parse(round.vote_closes_at);
+      if (Number.isFinite(closesAt) && Date.parse(now) >= closesAt) throw conflict('ROUND_LOCKED', 'Voting time has ended');
       if (expectedRoundVersion !== null && round.version !== expectedRoundVersion) throw conflict('CONFLICT', 'Voting state changed; refresh and try again');
       const participant = this.db.prepare("SELECT * FROM participants WHERE id = ? AND event_id = ? AND status = 'ACTIVE'").get(session.participant_id, session.event_id);
       if (!participant) throw forbidden('Participant session is inactive');

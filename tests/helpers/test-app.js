@@ -123,6 +123,7 @@ export async function createEvent(admin, options = {}) {
       title: options.title ?? 'Test Awards',
       subtitle: options.subtitle ?? 'Annual staff event',
       participantLimit: options.participantLimit ?? 30,
+      voteDurationSeconds: options.voteDurationSeconds ?? 45,
       nominees,
       awards,
     },

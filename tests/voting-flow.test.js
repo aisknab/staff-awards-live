@@ -68,6 +68,27 @@ test('20 participants vote concurrently while public tallies remain unmapped', a
   assert.equal(revealed.round.revealed.winners[0].voteCount, 9);
 });
 
+test('round timer rejects votes after the configured deadline', async (t) => {
+  const ctx = await startTestApp();
+  t.after(() => ctx.stop());
+  const admin = ctx.client();
+  await loginAdmin(admin);
+  let state = await createEvent(admin, { voteDurationSeconds: 1 });
+  assert.equal(state.event.voteDurationSeconds, 1);
+  state = await openFirstRound(admin, state);
+  assert.equal(Boolean(state.event.currentRound.voteClosesAt), true);
+
+  const participant = ctx.client();
+  const joined = await joinWithCode(participant, state.event.access.manualCode);
+  await new Promise((resolve) => setTimeout(resolve, 1150));
+  const lateVote = await participant.request('/api/participant/vote', {
+    method: 'PUT',
+    body: { roundId: joined.round.id, nomineeId: joined.round.nominees[0].id, requestId: crypto.randomUUID(), expectedRoundVersion: joined.round.version },
+  });
+  assert.equal(lateVote.response.status, 409);
+  assert.equal(lateVote.payload.error.code, 'ROUND_LOCKED');
+});
+
 test('a participant can change one persisted vote before lock', async (t) => {
   const ctx = await startTestApp();
   t.after(() => ctx.stop());

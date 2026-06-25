@@ -4,6 +4,7 @@ import { LiveConnection } from './common/connection.js';
 
 const root = document.querySelector('#app');
 const api = new ApiClient();
+const DEFAULT_VOTE_DURATION_SECONDS = 45;
 let appState = null;
 let authenticated = false;
 let connection = null;
@@ -17,6 +18,9 @@ let editingDetails = false;
 let detailsDraft = null;
 let selectedPeopleListId = '';
 let peopleListName = '';
+let roundTimer = null;
+let roundServerOffsetMs = 0;
+let roundServerTimeSource = '';
 
 void initialise();
 
@@ -47,6 +51,7 @@ function connect(eventId) {
         authenticated = false;
         appState = null;
         connection?.close();
+        clearRoundTimer();
         message = 'Your admin session has ended.';
       }
       render();
@@ -63,7 +68,11 @@ function renderConnectionBadge() {
 }
 
 function render() {
-  if (!authenticated) return renderLogin();
+  if (!authenticated) {
+    clearRoundTimer();
+    return renderLogin();
+  }
+  syncRoundTimer(appState?.event?.currentRound);
   const isConfigMode = creatingNew || !appState?.event || appState.event.status === 'DRAFT';
   if (isConfigMode) {
     ensureDraft();
@@ -189,6 +198,7 @@ function emptyDraft() {
     title: '',
     subtitle: '',
     participantLimit: 30,
+    voteDurationSeconds: DEFAULT_VOTE_DURATION_SECONDS,
     nomineeText: '',
     awards: [{ title: 'Mr Mute', description: 'The person most likely to deliver their best point while still on mute', eligibleKeys: new Set() }],
   };
@@ -202,6 +212,7 @@ function draftFromEvent(event) {
     title: event.title,
     subtitle: event.subtitle,
     participantLimit: event.participantLimit,
+    voteDurationSeconds: event.voteDurationSeconds ?? DEFAULT_VOTE_DURATION_SECONDS,
     nomineeText: event.nominees.map((nominee) => `${nominee.displayName}${nominee.subtitle ? ` | ${nominee.subtitle}` : ''}`).join('\n'),
     awards: event.awards.map((award) => ({
       title: award.title,
@@ -231,6 +242,7 @@ function configEditor() {
         field('Event title', h('input', { class: 'input', value: draft.title, maxlength: '100', onInput: (event) => { draft.title = event.target.value; } })),
         field('Subtitle', h('input', { class: 'input', value: draft.subtitle, maxlength: '200', onInput: (event) => { draft.subtitle = event.target.value; } })),
         field('Participant limit', h('input', { class: 'input', type: 'number', min: '2', max: '250', value: draft.participantLimit, onInput: (event) => { draft.participantLimit = Number(event.target.value); } })),
+        field('Voting timer seconds', h('input', { class: 'input', type: 'number', min: '1', max: '600', value: draft.voteDurationSeconds, onInput: (event) => { draft.voteDurationSeconds = Number(event.target.value); } })),
         peopleListControls(),
         field('Nominees', h('textarea', {
           class: 'textarea', value: draft.nomineeText, placeholder: 'Alex Smith | Sales\nCharlie Lee | Engineering',
@@ -409,6 +421,7 @@ async function saveDraft() {
     title: draft.title,
     subtitle: draft.subtitle,
     participantLimit: Number(draft.participantLimit),
+    voteDurationSeconds: Number(draft.voteDurationSeconds),
     nominees,
     awards: draft.awards.map((award) => ({ title: award.title, description: award.description, eligibleNomineeKeys: [...award.eligibleKeys] })),
   };
@@ -436,7 +449,7 @@ function liveController() {
       h('section', { class: 'card admin-card stack' },
         h('div', { class: 'row between' },
           h('div', {}, h('p', { class: 'eyebrow', text: `${event.status} · version ${event.version}` }), h('h1', { class: 'title', text: round?.award?.title ?? event.title }), round?.award?.description ? h('p', { class: 'subtitle', text: round.award.description }) : null),
-          round ? h('span', { class: 'pill connected', text: round.status }) : null,
+          round ? h('div', { class: 'row' }, round.status === 'OPEN' ? adminVoteTimer(round) : null, h('span', { class: 'pill connected', text: round.status })) : null,
         ),
         metrics(),
         h('div', { class: 'control-grid' }, ...actionButtons(event, round)),
@@ -465,6 +478,7 @@ function detailsDraftFromEvent(event) {
     title: event.title,
     subtitle: event.subtitle,
     participantLimit: event.participantLimit,
+    voteDurationSeconds: event.voteDurationSeconds ?? DEFAULT_VOTE_DURATION_SECONDS,
   };
 }
 
@@ -501,6 +515,7 @@ function eventDetailsPanel(event) {
         field('Event title', h('input', { class: 'input', value: detailsDraft.title, maxlength: '100', onInput: (inputEvent) => { detailsDraft.title = inputEvent.target.value; } })),
         field('Subtitle', h('input', { class: 'input', value: detailsDraft.subtitle, maxlength: '200', onInput: (inputEvent) => { detailsDraft.subtitle = inputEvent.target.value; } })),
         field('Participant limit', h('input', { class: 'input', type: 'number', min: '2', max: '250', value: detailsDraft.participantLimit, onInput: (inputEvent) => { detailsDraft.participantLimit = Number(inputEvent.target.value); } })),
+        field('Voting timer seconds', h('input', { class: 'input', type: 'number', min: '1', max: '600', value: detailsDraft.voteDurationSeconds, onInput: (inputEvent) => { detailsDraft.voteDurationSeconds = Number(inputEvent.target.value); } })),
         h('div', { class: 'row' },
           h('button', { class: 'button small', type: 'submit', disabled: busy, text: busy ? 'Saving…' : 'Save details' }),
           h('button', { class: 'button secondary small', type: 'button', disabled: busy, onClick: cancelEditDetails, text: 'Cancel' }),
@@ -518,6 +533,7 @@ function eventDetailsPanel(event) {
       detailItem('Title', event.title),
       event.subtitle ? detailItem('Subtitle', event.subtitle) : null,
       detailItem('Participant limit', event.participantLimit),
+      detailItem('Voting timer', formatRoundSeconds(event.voteDurationSeconds ?? DEFAULT_VOTE_DURATION_SECONDS)),
     ),
   );
 }
@@ -535,6 +551,7 @@ async function saveEventDetails(event) {
     title: detailsDraft.title,
     subtitle: detailsDraft.subtitle,
     participantLimit: Number(detailsDraft.participantLimit),
+    voteDurationSeconds: Number(detailsDraft.voteDurationSeconds),
   };
   busy = true;
   message = '';
@@ -567,6 +584,51 @@ function metrics() {
 
 function metric(value, label) {
   return h('div', { class: 'admin-metric' }, h('strong', { text: value }), h('span', { text: label }));
+}
+
+function adminVoteTimer(round) {
+  const seconds = secondsRemainingForRound(round);
+  if (!Number.isFinite(seconds)) return null;
+  const expired = seconds <= 0;
+  return h('div', { class: 'round-timer admin-round-timer' + (expired ? ' expired' : ''), role: 'timer' },
+    h('span', { class: 'round-timer-label', text: expired ? 'Time up' : 'Time left' }),
+    h('strong', { class: 'round-timer-value', text: formatRoundSeconds(seconds) }),
+  );
+}
+
+function syncRoundTimer(round) {
+  syncRoundClock(round);
+  const seconds = secondsRemainingForRound(round);
+  const shouldRun = round?.status === 'OPEN' && Number.isFinite(seconds) && seconds > 0;
+  if (shouldRun && !roundTimer) roundTimer = window.setInterval(render, 250);
+  if (!shouldRun) clearRoundTimer();
+}
+
+function syncRoundClock(round) {
+  const value = round?.serverTime ?? '';
+  const serverTime = Date.parse(value);
+  const source = round?.id ? round.id + ':' + value : value;
+  if (Number.isFinite(serverTime) && source !== roundServerTimeSource) {
+    roundServerTimeSource = source;
+    roundServerOffsetMs = serverTime - Date.now();
+  }
+}
+
+function secondsRemainingForRound(round) {
+  const closesAt = Date.parse(round?.voteClosesAt ?? '');
+  if (!Number.isFinite(closesAt)) return NaN;
+  return Math.max(0, Math.ceil((closesAt - (Date.now() + roundServerOffsetMs)) / 1000));
+}
+
+function formatRoundSeconds(totalSeconds) {
+  const seconds = Math.max(0, Number(totalSeconds) || 0);
+  const minutes = Math.floor(seconds / 60);
+  return minutes + ':' + String(seconds % 60).padStart(2, '0');
+}
+
+function clearRoundTimer() {
+  if (roundTimer) window.clearInterval(roundTimer);
+  roundTimer = null;
 }
 
 function actionButtons(event, round) {

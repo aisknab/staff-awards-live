@@ -17,6 +17,7 @@ export class EventService {
   listEvents() {
     return this.db.prepare(`
       SELECT id, title, subtitle, status, participant_limit AS participantLimit,
+             vote_duration_seconds AS voteDurationSeconds,
              join_open AS joinOpen, version, created_at AS createdAt,
              updated_at AS updatedAt, finished_at AS finishedAt
       FROM events
@@ -58,19 +59,19 @@ export class EventService {
     this.db.transaction(() => {
       if (existing) {
         this.db.prepare(`
-          UPDATE events SET title = ?, subtitle = ?, participant_limit = ?, version = version + 1, updated_at = ?
+          UPDATE events SET title = ?, subtitle = ?, participant_limit = ?, vote_duration_seconds = ?, version = version + 1, updated_at = ?
           WHERE id = ? AND status = 'DRAFT'
-        `).run(input.title, input.subtitle, input.participantLimit, timestamp, eventId);
+        `).run(input.title, input.subtitle, input.participantLimit, input.voteDurationSeconds, timestamp, eventId);
         this.db.prepare('DELETE FROM awards WHERE event_id = ?').run(eventId);
         this.db.prepare('DELETE FROM nominees WHERE event_id = ?').run(eventId);
       } else {
         this.db.prepare(`
           INSERT INTO events (
-            id, title, subtitle, status, active_round_id, participant_limit, join_open,
+            id, title, subtitle, status, active_round_id, participant_limit, vote_duration_seconds, join_open,
             display_blanked, join_token_version, display_token_version, manual_code_version,
             version, created_at, updated_at, finished_at
-          ) VALUES (?, ?, ?, 'DRAFT', NULL, ?, 0, 0, 1, 1, 1, 1, ?, ?, NULL)
-        `).run(eventId, input.title, input.subtitle, input.participantLimit, timestamp, timestamp);
+          ) VALUES (?, ?, ?, 'DRAFT', NULL, ?, ?, 0, 0, 1, 1, 1, 1, ?, ?, NULL)
+        `).run(eventId, input.title, input.subtitle, input.participantLimit, input.voteDurationSeconds, timestamp, timestamp);
       }
 
       const insertNominee = this.db.prepare(`
@@ -112,12 +113,13 @@ export class EventService {
     }
 
     const timestamp = nowIso();
+    const voteDurationSeconds = input.voteDurationSeconds ?? event.vote_duration_seconds ?? 45;
     this.db.transaction(() => {
       this.db.prepare(`
         UPDATE events
-        SET title = ?, subtitle = ?, participant_limit = ?, version = version + 1, updated_at = ?
+        SET title = ?, subtitle = ?, participant_limit = ?, vote_duration_seconds = ?, version = version + 1, updated_at = ?
         WHERE id = ?
-      `).run(input.title, input.subtitle, input.participantLimit, timestamp, event.id);
+      `).run(input.title, input.subtitle, input.participantLimit, voteDurationSeconds, timestamp, event.id);
       this.audit(event.id, 'EVENT_DETAILS_UPDATED', { activeParticipants });
     });
 
@@ -143,6 +145,7 @@ export class EventService {
       subtitle: event.subtitle,
       status: event.status,
       participantLimit: event.participant_limit,
+      voteDurationSeconds: event.vote_duration_seconds,
       joinOpen: Boolean(event.join_open),
       displayBlanked: Boolean(event.display_blanked),
       version: event.version,
@@ -183,6 +186,8 @@ export class EventService {
       status: round.status,
       version: round.version,
       roundNumber: round.round_number,
+      voteClosesAt: round.vote_closes_at,
+      serverTime: nowIso(),
       award: { id: round.award_id, title: round.award_title, description: round.award_description },
       nominees: ['PREVIEW', 'OPEN', 'LOCKED'].includes(round.status) ? this.results.orderedNominees(round.id, participant.id) : [],
       ownVote,
@@ -206,6 +211,8 @@ export class EventService {
         status: round.status,
         version: round.version,
         roundNumber: round.round_number,
+        voteClosesAt: round.vote_closes_at,
+        serverTime: nowIso(),
         award: { id: round.award_id, title: round.award_title, description: round.award_description },
         maskedTally: this.masked?.get(round) ?? this.results.publicTally(round),
         revealed: ['REVEALED', 'COMPLETE'].includes(round.status) ? this.results.revealed(round.id) : null,
@@ -254,6 +261,8 @@ export class EventService {
       roundNumber: round.round_number,
       status: round.status,
       version: round.version,
+      voteClosesAt: round.vote_closes_at,
+      serverTime: nowIso(),
       award: { title: round.award_title, description: round.award_description, sortOrder: round.award_sort_order },
       openedAt: round.opened_at,
       lockedAt: round.locked_at,
@@ -435,8 +444,9 @@ export class EventService {
     requireRound(round);
     if (round.status !== 'PREVIEW') throw conflict('INVALID_STATE_TRANSITION', 'Only a preview round can open for voting');
     const now = nowIso();
+    const closeAt = voteClosesAt(now, event.vote_duration_seconds);
     this.db.transaction(() => {
-      const result = this.db.prepare(`UPDATE rounds SET status = 'OPEN', version = version + 1, opened_at = ? WHERE id = ? AND status = 'PREVIEW'`).run(now, round.id);
+      const result = this.db.prepare(`UPDATE rounds SET status = 'OPEN', version = version + 1, opened_at = ?, vote_closes_at = ? WHERE id = ? AND status = 'PREVIEW'`).run(now, closeAt, round.id);
       if (Number(result.changes) !== 1) throw conflict('CONFLICT', 'Round state changed');
       this.db.prepare(`UPDATE events SET status = 'LIVE', version = version + 1, updated_at = ? WHERE id = ?`).run(now, event.id);
     });
@@ -463,8 +473,9 @@ export class EventService {
     requireRound(round);
     if (round.status !== 'LOCKED' || round.revealed_at) throw conflict('INVALID_STATE_TRANSITION', 'Only an unrevealed locked round can reopen');
     const now = nowIso();
+    const closeAt = voteClosesAt(now, event.vote_duration_seconds);
     this.db.transaction(() => {
-      this.db.prepare(`UPDATE rounds SET status = 'OPEN', version = version + 1, locked_at = NULL WHERE id = ? AND status = 'LOCKED'`).run(round.id);
+      this.db.prepare(`UPDATE rounds SET status = 'OPEN', version = version + 1, locked_at = NULL, vote_closes_at = ? WHERE id = ? AND status = 'LOCKED'`).run(closeAt, round.id);
       this.db.prepare('UPDATE events SET version = version + 1, updated_at = ? WHERE id = ?').run(now, event.id);
     });
   }
@@ -572,6 +583,7 @@ export class EventService {
     requireRound(round);
     if (round.status !== 'REVEALED') throw conflict('INVALID_STATE_TRANSITION', 'Reveal the result before moving on');
     const now = nowIso();
+    const closeAt = voteClosesAt(now, event.vote_duration_seconds);
     this.db.transaction(() => {
       this.db.prepare(`UPDATE rounds SET status = 'COMPLETE', version = version + 1, completed_at = ? WHERE id = ? AND status = 'REVEALED'`).run(now, round.id);
       const next = this.nextIncompleteAward(event.id);
@@ -581,7 +593,7 @@ export class EventService {
       }
       const nomineeIds = this.db.prepare('SELECT nominee_id AS nomineeId FROM award_nominees WHERE award_id = ?').all(next.id).map((row) => row.nomineeId);
       const newRound = this.createRound(event.id, next.id, null, nomineeIds, 'OPEN');
-      this.db.prepare('UPDATE rounds SET opened_at = ? WHERE id = ?').run(now, newRound.id);
+      this.db.prepare('UPDATE rounds SET opened_at = ?, vote_closes_at = ? WHERE id = ?').run(now, closeAt, newRound.id);
       this.db.prepare('UPDATE events SET active_round_id = ?, version = version + 1, updated_at = ? WHERE id = ?').run(newRound.id, now, event.id);
     });
   }
@@ -666,7 +678,7 @@ export class EventService {
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM votes WHERE round_id = ?').run(round.id);
       this.db.prepare('DELETE FROM revealed_results WHERE round_id = ?').run(round.id);
-      this.db.prepare(`UPDATE rounds SET status = 'PREVIEW', version = version + 1, opened_at = NULL, locked_at = NULL, revealed_at = NULL, eligible_participant_count = 0 WHERE id = ?`).run(round.id);
+      this.db.prepare(`UPDATE rounds SET status = 'PREVIEW', version = version + 1, opened_at = NULL, vote_closes_at = NULL, locked_at = NULL, revealed_at = NULL, eligible_participant_count = 0 WHERE id = ?`).run(round.id);
       this.db.prepare('UPDATE events SET version = version + 1, updated_at = ? WHERE id = ?').run(now, event.id);
     });
   }
@@ -840,6 +852,7 @@ function validateConfig(raw) {
     title: text(input.title, 'title', { max: 100 }),
     subtitle: text(input.subtitle ?? '', 'subtitle', { required: false, max: 200 }),
     participantLimit: integer(input.participantLimit ?? 30, 'participantLimit', { min: 2, max: 250 }),
+    voteDurationSeconds: validateVoteDuration(input.voteDurationSeconds ?? 45),
     nominees,
     awards,
   };
@@ -853,7 +866,17 @@ function validateEventDetails(raw) {
     title: text(input.title, 'title', { max: 100 }),
     subtitle: text(input.subtitle ?? '', 'subtitle', { required: false, max: 200 }),
     participantLimit: integer(input.participantLimit ?? 30, 'participantLimit', { min: 2, max: 250 }),
+    voteDurationSeconds: optionalVoteDuration(input.voteDurationSeconds),
   };
+}
+
+function validateVoteDuration(value) {
+  return integer(value, 'voteDurationSeconds', { min: 1, max: 600 });
+}
+
+function optionalVoteDuration(value) {
+  if (value === undefined || value === null) return null;
+  return validateVoteDuration(value);
 }
 
 function validatePeopleList(raw) {
@@ -883,6 +906,10 @@ function requireRound(round) {
   if (!round) throw conflict('NO_ACTIVE_ROUND', 'There is no active award round');
 }
 
+function voteClosesAt(openedAtIso, durationSeconds) {
+  return new Date(Date.parse(openedAtIso) + validateVoteDuration(durationSeconds) * 1000).toISOString();
+}
+
 function publicEvent(event) {
   return {
     id: event.id,
@@ -891,6 +918,7 @@ function publicEvent(event) {
     status: event.status,
     joinOpen: Boolean(event.join_open),
     displayBlanked: Boolean(event.display_blanked),
+    voteDurationSeconds: event.vote_duration_seconds,
     version: event.version,
   };
 }

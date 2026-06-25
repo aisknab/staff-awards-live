@@ -308,14 +308,18 @@ export function createApplication(options = {}) {
       const body = await readJson(req, config.maxBodyBytes);
       const result = votingService.submit(session, body);
       const round = eventService.getRound(result.roundId);
-      masked.queue(round);
-      hub.broadcastSnapshot(session.event_id, ['ADMIN']);
-      hub.broadcast(session.event_id, ['PARTICIPANT', 'DISPLAY'], 'vote-progress', {
-        eventVersion: eventService.getEvent(session.event_id).version,
+      const event = eventService.getEvent(session.event_id);
+      const liveTally = masked.force(round) ?? resultService.publicTally(round);
+      const progressPayload = {
+        eventVersion: event.version,
         roundId: round.id,
         roundVersion: round.version,
         votesCast: resultService.voteCount(round.id),
-      });
+        serverTime: new Date().toISOString(),
+      };
+      hub.broadcastSnapshot(session.event_id, ['ADMIN']);
+      hub.broadcast(session.event_id, ['PARTICIPANT'], 'vote-progress', progressPayload);
+      hub.broadcast(session.event_id, ['DISPLAY'], 'vote-progress', { ...progressPayload, maskedTally: liveTally });
       return sendJson(res, 200, buildParticipantState(session));
     }
 

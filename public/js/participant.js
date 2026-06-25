@@ -23,6 +23,9 @@ let revealCountdown = null;
 let countdownTimer = null;
 let specialAwardCountdown = null;
 let specialAwardTimer = null;
+let roundTimer = null;
+let roundServerOffsetMs = 0;
+let roundServerTimeSource = '';
 
 void initialise();
 
@@ -68,6 +71,7 @@ function connect() {
         message = 'This participant session has ended.';
         connection?.close();
         clearSpecialAwardCountdown();
+        clearRoundTimer();
       } else if (type === 'snapshot') {
         const previousRound = state?.round;
         const previousSpecialAward = state?.specialAward;
@@ -78,7 +82,9 @@ function connect() {
       } else if (type === 'presence' && state) {
         state.progress = payload.progress;
       } else if (type === 'vote-progress' && state?.round?.id === payload.roundId) {
-        state.round.maskedTally.votesCast = payload.votesCast;
+        if (payload.maskedTally && state.round.ownVote) state.round.maskedTally = payload.maskedTally;
+        else if (state.round.maskedTally) state.round.maskedTally.votesCast = payload.votesCast;
+        state.round.serverTime = payload.serverTime ?? state.round.serverTime;
       } else if (type === 'round-revealed' && state?.round?.id === payload.roundId) {
         startRevealCountdown(revealKeyFromPayload(payload), payload.roundId, 'participant');
       }
@@ -98,8 +104,10 @@ function renderHeaderOnly() {
 function render() {
   if (!state) {
     document.body.classList.remove('quickest-winner-active');
+    clearRoundTimer();
     return renderJoin();
   }
+  syncRoundTimer(state.round);
   document.title = `${state.event.title} · Staff Awards`;
   if (state.round?.id !== selectionRoundId) {
     selectionRoundId = state.round?.id ?? null;
@@ -209,6 +217,7 @@ function previewScreen(round) {
 }
 
 function votingScreen(round) {
+  const expired = roundVotingExpired(round);
   const search = h('input', {
     class: 'input', type: 'search', placeholder: 'Search nominees', value: filterText,
     onInput: (event) => { filterText = event.target.value; renderNomineeList(round); },
@@ -220,11 +229,13 @@ function votingScreen(round) {
       h('h1', { class: 'title', text: round.award.title }),
       round.award.description ? h('p', { class: 'subtitle', text: round.award.description }) : null,
     ),
-    round.ownVote ? h('div', { class: 'notice-banner', text: 'Your vote is saved. You can change it until voting closes.' }) : null,
+    voteTimerBadge(round),
+    expired ? h('div', { class: 'notice-banner', text: 'Time is up. Voting is closed for this award.' }) : null,
+    round.ownVote && !expired ? h('div', { class: 'notice-banner', text: 'Your vote is saved. You can change it until voting closes.' }) : null,
     h('div', { class: 'search-wrap' }, search),
     list,
     h('div', { class: 'vote-footer' },
-      h('button', { id: 'vote-submit', class: 'button', type: 'button', disabled: busy || !selectedNomineeId, onClick: () => submitVote(round), text: busy ? 'Saving…' : round.ownVote ? 'Update vote' : 'Submit vote' }),
+      h('button', { id: 'vote-submit', class: 'button', type: 'button', disabled: busy || !selectedNomineeId || expired, onClick: () => submitVote(round), text: busy ? 'Saving...' : round.ownVote ? 'Update vote' : 'Submit vote' }),
     ),
     round.ownVote ? maskedResults(round.maskedTally) : h('p', { class: 'muted', text: `${round.maskedTally.votesCast} of ${Math.max(round.maskedTally.eligibleParticipants, state.progress.registeredParticipants)} participants have voted` }),
   );
@@ -236,12 +247,14 @@ function renderNomineeList(round) {
   const list = document.querySelector('#nominee-list');
   if (!list) return;
   const filter = filterText.trim().toLocaleLowerCase();
-  const nominees = round.nominees.filter((nominee) => `${nominee.name} ${nominee.subtitle}`.toLocaleLowerCase().includes(filter));
+  const expired = roundVotingExpired(round);
+  const nominees = round.nominees.filter((nominee) => (nominee.name + ' ' + nominee.subtitle).toLocaleLowerCase().includes(filter));
   clear(list, nominees.length ? nominees.map((nominee) => h('button', {
     class: `nominee-card${selectedNomineeId === nominee.id ? ' selected' : ''}`,
     type: 'button',
     'aria-pressed': selectedNomineeId === nominee.id ? 'true' : 'false',
-    onClick: () => { selectedNomineeId = nominee.id; renderNomineeList(round); const submit = document.querySelector('#vote-submit'); if (submit) submit.disabled = false; },
+    disabled: expired,
+    onClick: () => { if (expired) return; selectedNomineeId = nominee.id; renderNomineeList(round); const submit = document.querySelector('#vote-submit'); if (submit) submit.disabled = false; },
   },
   h('span', {}, h('span', { class: 'nominee-name', text: nominee.name }), nominee.subtitle ? h('span', { class: 'nominee-subtitle', text: nominee.subtitle }) : null),
   h('span', { class: 'nominee-check', 'aria-hidden': 'true' }),
@@ -249,6 +262,11 @@ function renderNomineeList(round) {
 }
 
 async function submitVote(round) {
+  if (roundVotingExpired(round)) {
+    message = 'Voting has closed.';
+    render();
+    return;
+  }
   if (!selectedNomineeId || busy) return;
   busy = true;
   message = '';
@@ -476,6 +494,56 @@ function scheduleRevealAnimation(revealKey, variant) {
     const node = document.querySelector('[data-reveal-key]');
     if (node?.dataset.revealKey === revealKey) playRevealBurst(node, { variant });
   });
+}
+
+function voteTimerBadge(round) {
+  const seconds = secondsRemainingForRound(round);
+  if (!Number.isFinite(seconds)) return null;
+  const expired = seconds <= 0;
+  return h('div', { class: 'round-timer participant-round-timer' + (expired ? ' expired' : ''), role: 'timer' },
+    h('span', { class: 'round-timer-label', text: expired ? 'Time up' : 'Time left' }),
+    h('strong', { class: 'round-timer-value', text: formatRoundSeconds(seconds) }),
+  );
+}
+
+function syncRoundTimer(round) {
+  syncRoundClock(round);
+  const seconds = secondsRemainingForRound(round);
+  const shouldRun = round?.status === 'OPEN' && Number.isFinite(seconds) && seconds > 0;
+  if (shouldRun && !roundTimer) roundTimer = window.setInterval(render, 250);
+  if (!shouldRun) clearRoundTimer();
+}
+
+function syncRoundClock(round) {
+  const value = round?.serverTime ?? round?.maskedTally?.serverTime ?? '';
+  const serverTime = Date.parse(value);
+  const source = round?.id ? round.id + ':' + value : value;
+  if (Number.isFinite(serverTime) && source !== roundServerTimeSource) {
+    roundServerTimeSource = source;
+    roundServerOffsetMs = serverTime - Date.now();
+  }
+}
+
+function roundVotingExpired(round) {
+  const seconds = secondsRemainingForRound(round);
+  return round?.status === 'OPEN' && Number.isFinite(seconds) && seconds <= 0;
+}
+
+function secondsRemainingForRound(round) {
+  const closesAt = Date.parse(round?.voteClosesAt ?? '');
+  if (!Number.isFinite(closesAt)) return NaN;
+  return Math.max(0, Math.ceil((closesAt - (Date.now() + roundServerOffsetMs)) / 1000));
+}
+
+function formatRoundSeconds(totalSeconds) {
+  const seconds = Math.max(0, Number(totalSeconds) || 0);
+  const minutes = Math.floor(seconds / 60);
+  return minutes + ':' + String(seconds % 60).padStart(2, '0');
+}
+
+function clearRoundTimer() {
+  if (roundTimer) window.clearInterval(roundTimer);
+  roundTimer = null;
 }
 
 function maskedResults(tally) {

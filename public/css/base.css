@@ -310,3 +310,36 @@ code,
   .confetti-burst { display: none !important; }
   .winner-burst, .winner-chip, .display-winner-card { animation: reduced-reveal .28s ease-out both !important; }
 }
+
+.round-timer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  width: max-content;
+  max-width: 100%;
+  padding: .55rem .72rem;
+  border: 1px solid rgba(235, 93, 11, .32);
+  border-radius: 8px;
+  background: rgba(255, 250, 247, .72);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.round-timer-label {
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.round-timer-value {
+  color: var(--accent-strong);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.round-timer.expired {
+  border-color: rgba(208, 74, 92, .42);
+  background: rgba(255, 226, 230, .78);
+}
+.round-timer.expired .round-timer-value { color: var(--danger); }
