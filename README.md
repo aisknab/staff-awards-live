@@ -147,7 +147,7 @@ Production startup fails rather than silently inventing missing secrets.
 13. Move to the next award.
 14. Export the final CSV after the event.
 
-Reveal and destructive actions require confirmation in the controller UI. A revealed round cannot be reopened or reset. A finished event can be reopened to keep existing participants and results, or restarted from the lobby with the same configuration after clearing participants, rounds, votes, and revealed results.
+Reveal and destructive actions execute immediately from the controller UI. A revealed round cannot be reopened or reset. A finished event can be reopened to keep existing participants and results, or restarted from the lobby with the same configuration after clearing participants, rounds, votes, and revealed results.
 
 ## Masking model
 

@@ -300,7 +300,6 @@ function loadSelectedPeopleList() {
   const list = selectedPeopleList();
   if (!list) return;
   const nextText = list.entries.map(nomineeLine).join('\n');
-  if (draft.nomineeText.trim() && draft.nomineeText.trim() !== nextText.trim() && !confirm(`Replace the current nominees with "${list.name}"?`)) return;
   draft.nomineeText = nextText;
   peopleListName = list.name;
   selectAllAwardNominees();
@@ -350,7 +349,7 @@ async function savePeopleList() {
 async function deleteSelectedPeopleList() {
   if (busy) return;
   const list = selectedPeopleList();
-  if (!list || !confirm(`Delete "${list.name}"? Events already saved will not change.`)) return;
+  if (!list) return;
   busy = true;
   message = '';
   render();
@@ -641,35 +640,6 @@ function noVotePanel(round, decision) {
 async function action(actionName) {
   if (busy || !appState?.event) return;
   const round = appState.event.currentRound;
-  if (actionName === 'REVEAL_JOINT_WINNERS') {
-    const names = round?.resultDecision?.tiedNominees?.map((nominee) => nominee.name) ?? [];
-    const promptText = names.length
-      ? `Reveal ${formatNameList(names)} as joint winners for ${round.award.title}?`
-      : 'Reveal joint winners to every connected screen?';
-    if (!confirm(promptText)) return;
-  }
-  if (actionName === 'REVEAL_WINNER') {
-    const promptText = round?.resultDecision?.mode === 'none'
-      ? `Reveal no winner for ${round.award.title}?`
-      : 'Reveal the result to every connected screen?';
-    if (!confirm(promptText)) return;
-  }
-  if (actionName === 'FINISH_EVENT' && !confirm('Finish this event? No further votes will be accepted.')) return;
-  if (actionName === 'REOPEN_EVENT' && !confirm('Reopen this event? Existing results will be kept and joining will reopen.')) return;
-  if (actionName === 'RESTART_EVENT') {
-    const typed = prompt(`Type the event title to clear participants, votes, and results, then return to the lobby:\n${appState.event.title}`);
-    if (typed !== appState.event.title) return;
-  }
-  if (actionName === 'REVISE_FINISHED_CONFIG') {
-    const typed = prompt(`Type the event title to clear participants, votes, and results, then return to draft configuration:\n${appState.event.title}`);
-    if (typed !== appState.event.title) return;
-  }
-  if (actionName === 'ROTATE_DISPLAY_TOKEN' && !confirm('Rotate the display link and disconnect existing displays?')) return;
-  if (actionName === 'ROTATE_JOIN_TOKEN' && !confirm('Rotate the participant link and manual code? Existing participants will stay connected.')) return;
-  if (actionName === 'RESET_CURRENT_ROUND') {
-    const typed = prompt(`Type the award title to delete this round's votes:\n${round?.award?.title ?? ''}`);
-    if (typed !== round?.award?.title) return;
-  }
   busy = true;
   message = '';
   render();
@@ -766,7 +736,6 @@ function participantsPanel() {
 }
 
 async function revokeParticipant(participant) {
-  if (!confirm(`Revoke ${participant.label}? Their session will disconnect.`)) return;
   try {
     appState = await api.request('/api/admin/revoke-participant', { method: 'POST', body: { eventId: appState.event.id, participantId: participant.id } });
   } catch (error) {
