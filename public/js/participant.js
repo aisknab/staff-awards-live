@@ -120,8 +120,14 @@ function render() {
 }
 
 function header() {
+  const title = state?.event?.title ?? 'Staff Awards';
   return h('header', { class: 'participant-header' },
-    h('div', { class: 'brand', text: state?.event?.title ?? 'Staff Awards' }),
+    h('div', { class: 'brand-lockup' },
+      h('img', { class: 'brand-logo', src: '/brand/logos/criteo-logo-sunrise.svg', alt: 'Criteo' }),
+      h('div', { class: 'brand-event' },
+        h('div', { class: 'brand-event-title', text: title }),
+      ),
+    ),
     h('span', { class: `pill ${connectionStatus}`, dataset: { connection: 'true' }, text: connectionStatus === 'connected' ? 'Live' : 'Reconnecting' }),
   );
 }
@@ -137,6 +143,7 @@ function renderJoin() {
   );
   clear(root, h('main', { class: 'participant-shell' },
     h('section', { class: 'card participant-card join-card' },
+      h('img', { class: 'join-logo', src: '/brand/logos/criteo-logo-sunrise.svg', alt: 'Criteo' }),
       h('p', { class: 'eyebrow', text: 'Live staff awards' }),
       h('h1', { class: 'title', text: 'Join the vote' }),
       h('p', { class: 'subtitle', text: 'Scan the event QR code or enter the six-character code shown on screen.' }),

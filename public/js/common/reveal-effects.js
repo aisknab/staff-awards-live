@@ -1,4 +1,4 @@
-const COLORS = ['#ffd166', '#67d89a', '#ff7a90', '#7b8cff', '#f4f6fb', '#35d0ba'];
+const COLORS = ['#eb5d0b', '#ffb199', '#f04f8f', '#4a3279', '#fffaf7', '#6f5be8'];
 
 export function playRevealBurst(container, { variant = 'participant' } = {}) {
   if (!container) return;

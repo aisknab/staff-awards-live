@@ -1,9 +1,24 @@
+body {
+  background:
+    linear-gradient(180deg, rgba(255, 250, 247, .88), rgba(255, 240, 231, .94)),
+    url("/brand/images/criteo-background-lines.png") center / cover no-repeat fixed;
+}
 .admin-app { min-height: 100vh; padding: 1.25rem; }
 .admin-shell { width: min(1500px, 100%); margin: 0 auto; display: grid; gap: 1rem; }
 .admin-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .3rem; }
 .admin-title { font-size: 1.35rem; font-weight: 900; }
 .login-wrap { min-height: 90vh; display: grid; place-items: center; }
-.login-card { width: min(440px, 100%); padding: 2rem; }
+.login-card { width: min(440px, 100%); padding: 2rem; position: relative; overflow: hidden; }
+.login-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("/brand/images/criteo-background-lines.png") center / cover no-repeat;
+  opacity: .14;
+  pointer-events: none;
+}
+.login-card > * { position: relative; }
+.login-logo { display: block; width: min(150px, 46vw); height: auto; margin-bottom: 1.8rem; }
 .admin-toolbar { padding: 1rem; display: flex; align-items: end; gap: .8rem; flex-wrap: wrap; }
 .admin-toolbar .field { min-width: min(360px, 100%); flex: 1; }
 .admin-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(330px, .65fr); gap: 1rem; align-items: start; }
@@ -12,10 +27,10 @@
 .control-grid { display: flex; gap: .65rem; flex-wrap: wrap; }
 .tie-choice-panel {
   flex: 1 0 100%;
-  border: 1px solid rgba(255, 209, 102, .5);
-  border-radius: 14px;
+  border: 1px solid rgba(235, 93, 11, .34);
+  border-radius: 8px;
   padding: 1rem;
-  background: rgba(255, 209, 102, .08);
+  background: var(--brand-sunrise-soft);
 }
 .tie-choice-panel h2 { margin: 0; }
 .tie-list {
@@ -32,35 +47,35 @@
   align-items: center;
   padding: .65rem .75rem;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(0, 0, 0, .14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .58);
 }
-.tie-vote-count { font-weight: 850; color: var(--warning); text-align: right; }
+.tie-vote-count { font-weight: 800; color: var(--warning); text-align: right; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: .7rem; }
-.admin-metric { border: 1px solid var(--border); border-radius: 14px; padding: .85rem; background: var(--surface-2); }
+.admin-metric { border: 1px solid var(--border); border-radius: 8px; padding: .85rem; background: rgba(255, 240, 231, .82); }
 .admin-metric strong { display: block; font-size: 1.45rem; }
 .admin-metric span { color: var(--muted); font-size: .8rem; }
 .access-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
-.access-card { padding: 1rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; }
-.access-card img { width: min(220px, 100%); background: white; border-radius: 12px; margin-bottom: .7rem; }
+.access-card { padding: 1rem; background: rgba(255, 240, 231, .82); border: 1px solid var(--border); border-radius: 8px; }
+.access-card img { width: min(220px, 100%); background: white; border-radius: 8px; margin-bottom: .7rem; }
 .url-box { display: flex; gap: .5rem; align-items: center; }
 .url-box code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
-.code-large { font-size: 1.8rem; letter-spacing: .14em; font-weight: 900; color: var(--accent-strong); }
+.code-large { font-size: 1.8rem; letter-spacing: 0; font-weight: 700; color: var(--accent-strong); }
 .config-grid { display: grid; grid-template-columns: minmax(300px, .7fr) minmax(400px, 1.3fr); gap: 1rem; }
 .people-list-tools { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(150px, .75fr); gap: .7rem; align-items: end; }
 .people-list-buttons { grid-column: 1 / -1; display: flex; gap: .5rem; flex-wrap: wrap; }
 .award-editor-list { display: grid; gap: .8rem; }
-.award-editor { padding: 1rem; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); }
+.award-editor { padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: rgba(255, 240, 231, .82); }
 .award-editor-head { display: flex; justify-content: space-between; gap: .8rem; align-items: center; margin-bottom: .8rem; }
-.nominee-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .45rem; max-height: 220px; overflow: auto; padding: .65rem; border: 1px solid var(--border); border-radius: 10px; background: #11141a; }
+.nominee-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .45rem; max-height: 220px; overflow: auto; padding: .65rem; border: 1px solid var(--border); border-radius: 8px; background: rgba(255, 255, 255, .62); }
 .nominee-checks label { display: flex; gap: .5rem; align-items: start; font-size: .88rem; }
 .table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: .7rem .65rem; border-bottom: 1px solid var(--border); }
-th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
-.rank-first { color: var(--success); font-weight: 850; }
+th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: 0; }
+.rank-first { color: var(--success); font-weight: 800; }
 .side-stack { display: grid; gap: 1rem; }
-.hidden-tally { min-height: 180px; display: grid; place-items: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+.hidden-tally { min-height: 180px; display: grid; place-items: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 8px; }
 @media (max-width: 980px) {
   .admin-grid, .config-grid { grid-template-columns: 1fr; }
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
@@ -70,6 +85,7 @@ th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-s
   .access-grid { grid-template-columns: 1fr; }
   .metric-grid { grid-template-columns: 1fr 1fr; }
   .admin-header { align-items: flex-start; }
+  .admin-header .brand-logo { height: 1.1rem; }
   .people-list-tools { grid-template-columns: 1fr; }
   .people-list-buttons { grid-column: auto; }
   .tie-list li { grid-template-columns: 1fr; gap: .25rem; }

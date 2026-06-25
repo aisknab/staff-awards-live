@@ -91,6 +91,7 @@ function renderLogin() {
     h('button', { class: 'button', type: 'submit', disabled: busy, text: busy ? 'Signing in…' : 'Sign in' }),
   );
   clear(root, h('main', { class: 'login-wrap' }, h('section', { class: 'card login-card stack' },
+    h('img', { class: 'login-logo', src: '/brand/logos/criteo-logo-sunrise.svg', alt: 'Criteo' }),
     h('div', {}, h('p', { class: 'eyebrow', text: 'Controller access' }), h('h1', { class: 'title', text: 'Staff Awards' }), h('p', { class: 'subtitle', text: 'Sign in to configure and run the event.' })),
     message ? h('div', { class: 'error-banner', text: message }) : null,
     form,
@@ -118,7 +119,13 @@ async function login(event) {
 
 function adminHeader() {
   return h('header', { class: 'admin-header' },
-    h('div', {}, h('div', { class: 'admin-title', text: 'Staff Awards Controller' }), h('div', { class: 'muted', text: appState?.event?.title ?? 'No event selected' })),
+    h('div', { class: 'brand-lockup' },
+      h('img', { class: 'brand-logo', src: '/brand/logos/criteo-logo-sunrise.svg', alt: 'Criteo' }),
+      h('div', { class: 'brand-event' },
+        h('div', { class: 'admin-title brand-event-title', text: 'Staff Awards Controller' }),
+        h('div', { class: 'brand-event-subtitle', text: appState?.event?.title ?? 'No event selected' }),
+      ),
+    ),
     h('div', { class: 'row' },
       appState?.selectedEventId ? h('span', { class: `pill ${connectionStatus}`, dataset: { adminConnection: 'true' }, text: connectionStatus === 'connected' ? 'Live' : 'Reconnecting' }) : null,
       h('button', { class: 'button ghost small', type: 'button', onClick: logout, text: 'Sign out' }),
