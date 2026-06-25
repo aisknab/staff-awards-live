@@ -6,6 +6,8 @@ import { playRevealBurst } from './common/reveal-effects.js';
 const root = document.querySelector('#app');
 const api = new ApiClient();
 const REVEAL_COUNTDOWN_MS = 5000;
+const SPECIAL_AWARD_COUNTDOWN_MS = 5000;
+const SPECIAL_AWARD_VIBRATION = [180, 70, 180, 70, 180, 70, 240, 90, 240, 90, 320];
 let state = null;
 let connection = null;
 let connectionStatus = 'reconnecting';
@@ -15,8 +17,12 @@ let selectedNomineeId = null;
 let selectionRoundId = null;
 let filterText = '';
 const animatedRevealKeys = new Set();
+const animatedSpecialAwardKeys = new Set();
+const vibratedSpecialAwardKeys = new Set();
 let revealCountdown = null;
 let countdownTimer = null;
+let specialAwardCountdown = null;
+let specialAwardTimer = null;
 
 void initialise();
 
@@ -25,6 +31,7 @@ async function initialise() {
   if (token) {
     try {
       state = await api.request('/api/participant/join', { method: 'POST', body: { token }, csrf: false });
+      syncSpecialAwardCountdown(null, state.specialAward);
       history.replaceState({}, '', '/');
       connect();
     } catch (error) {
@@ -36,6 +43,7 @@ async function initialise() {
   }
   try {
     state = await api.request('/api/participant/state');
+    syncSpecialAwardCountdown(null, state.specialAward);
     connect();
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 401) message = friendlyError(error);
@@ -59,11 +67,14 @@ function connect() {
         state = null;
         message = 'This participant session has ended.';
         connection?.close();
+        clearSpecialAwardCountdown();
       } else if (type === 'snapshot') {
         const previousRound = state?.round;
+        const previousSpecialAward = state?.specialAward;
         state = payload;
         api.setCsrf(payload.csrfToken);
         startCountdownForTransition(previousRound, state.round, 'participant');
+        syncSpecialAwardCountdown(previousSpecialAward, state.specialAward);
       } else if (type === 'presence' && state) {
         state.progress = payload.progress;
       } else if (type === 'vote-progress' && state?.round?.id === payload.roundId) {
@@ -85,7 +96,10 @@ function renderHeaderOnly() {
 }
 
 function render() {
-  if (!state) return renderJoin();
+  if (!state) {
+    document.body.classList.remove('quickest-winner-active');
+    return renderJoin();
+  }
   document.title = `${state.event.title} · Staff Awards`;
   if (state.round?.id !== selectionRoundId) {
     selectionRoundId = state.round?.id ?? null;
@@ -94,8 +108,10 @@ function render() {
   } else if (!selectedNomineeId && state.round?.ownVote?.nomineeId) {
     selectedNomineeId = state.round.ownVote.nomineeId;
   }
+  const winnerShowing = isSpecialAwardWinnerShowing();
+  document.body.classList.toggle('quickest-winner-active', winnerShowing);
 
-  const shell = h('main', { class: 'participant-shell' },
+  const shell = h('main', { class: `participant-shell${winnerShowing ? ' quickest-winner-shell' : ''}` },
     header(),
     message ? h('div', { class: 'error-banner', text: message }) : null,
     screenForState(),
@@ -111,6 +127,7 @@ function header() {
 }
 
 function renderJoin() {
+  document.body.classList.remove('quickest-winner-active');
   const form = h('form', { class: 'join-form', onSubmit: joinWithCode },
     h('div', { class: 'field' },
       h('label', { for: 'event-code', text: 'Event code' }),
@@ -138,6 +155,7 @@ async function joinWithCode(event) {
   const code = new FormData(event.currentTarget).get('code');
   try {
     state = await api.request('/api/participant/join', { method: 'POST', body: { code }, csrf: false });
+    syncSpecialAwardCountdown(null, state.specialAward);
     connect();
   } catch (error) {
     message = friendlyError(error);
@@ -148,6 +166,7 @@ async function joinWithCode(event) {
 }
 
 function screenForState() {
+  if (state.specialAward) return specialAwardScreen(state.specialAward);
   if (state.event.status === 'FINISHED') return simpleScreen('Event complete', 'Thanks for voting.');
   const round = state.round;
   if (revealCountdown && revealCountdown.roundId !== round?.id) clearRevealCountdown();
@@ -232,10 +251,11 @@ async function submitVote(round) {
       method: 'PUT',
       body: { roundId: round.id, nomineeId: selectedNomineeId, requestId: crypto.randomUUID(), expectedRoundVersion: round.version },
     });
+    syncSpecialAwardCountdown(null, state.specialAward);
   } catch (error) {
     message = friendlyError(error);
     if (error.code === 'ROUND_LOCKED' || error.code === 'CONFLICT') {
-      try { state = await api.request('/api/participant/state'); } catch {}
+      try { state = await api.request('/api/participant/state'); syncSpecialAwardCountdown(null, state.specialAward); } catch {}
     }
   } finally {
     busy = false;
@@ -278,6 +298,71 @@ function revealScreen(round) {
       ))),
     ),
   );
+}
+
+function specialAwardScreen(award) {
+  const countdownSeconds = secondsRemainingForSpecialAward(specialAwardKey(award));
+  if (countdownSeconds) return specialAwardCountdownScreen(award, countdownSeconds);
+  return award.isWinner ? specialAwardWinnerScreen(award) : specialAwardAudienceScreen(award);
+}
+
+function specialAwardCountdownScreen(award, seconds) {
+  return h('section', { class: 'participant-countdown special-award-countdown', role: 'status', 'aria-live': 'assertive' },
+    h('p', { class: 'eyebrow', text: 'Special award' }),
+    h('h1', { class: 'title', text: award.title ?? 'Quickest to Judge Award' }),
+    h('div', { class: 'countdown-number', text: seconds }),
+  );
+}
+
+function specialAwardWinnerScreen(award) {
+  const key = specialAwardKey(award);
+  scheduleSpecialAwardCelebration(award);
+  return h('section', { class: 'participant-card quickest-award-winner winner-burst', dataset: { specialAwardKey: key } },
+    h('div', { class: 'reveal-content' },
+      h('p', { class: 'sr-only', 'aria-live': 'polite', text: 'You win the quickest to judge award' }),
+      h('p', { class: 'eyebrow', text: 'Quickest to judge' }),
+      h('h1', { class: 'title', text: 'You win the quickest to judge award' }),
+      h('p', { class: 'subtitle', text: specialAwardDetail(award) || 'Fastest average vote time' }),
+    ),
+  );
+}
+
+function specialAwardAudienceScreen(award) {
+  return h('section', { class: 'card participant-card hero special-award-card' },
+    h('p', { class: 'eyebrow', text: 'Quickest to judge award' }),
+    h('h1', { class: 'title', text: `${award.winnerLabel} wins` }),
+    h('p', { class: 'subtitle', text: specialAwardDetail(award) || 'Fastest average vote time' }),
+  );
+}
+
+function specialAwardDetail(award) {
+  if (!Number.isFinite(Number(award.averageSeconds))) return '';
+  const votes = Number(award.winnerVotesCast ?? 0);
+  return `${Number(award.averageSeconds).toFixed(1)}s average across ${votes} vote${votes === 1 ? '' : 's'}`;
+}
+
+function isSpecialAwardWinnerShowing() {
+  const award = state?.specialAward;
+  if (!award?.isWinner) return false;
+  return secondsRemainingForSpecialAward(specialAwardKey(award)) === 0;
+}
+
+function scheduleSpecialAwardCelebration(award) {
+  const key = specialAwardKey(award);
+  if (award.isWinner && !vibratedSpecialAwardKeys.has(key)) {
+    vibratedSpecialAwardKeys.add(key);
+    navigator.vibrate?.(SPECIAL_AWARD_VIBRATION);
+  }
+  if (!key || animatedSpecialAwardKeys.has(key)) return;
+  animatedSpecialAwardKeys.add(key);
+  queueMicrotask(() => {
+    const node = document.querySelector('[data-special-award-key]');
+    if (node?.dataset.specialAwardKey === key) playRevealBurst(node, { variant: 'participant' });
+  });
+}
+
+function specialAwardKey(award) {
+  return award?.key ?? `${award?.type ?? 'special'}:${award?.revealedAt ?? ''}:${award?.winnerLabel ?? ''}`;
 }
 
 function winnerVoteCount(winner) {
@@ -329,6 +414,52 @@ function clearRevealCountdown() {
   if (countdownTimer) window.clearInterval(countdownTimer);
   countdownTimer = null;
   revealCountdown = null;
+}
+
+function syncSpecialAwardCountdown(previousAward, nextAward) {
+  if (!nextAward) {
+    clearSpecialAwardCountdown();
+    return;
+  }
+  const key = specialAwardKey(nextAward);
+  if (previousAward?.key === key && specialAwardCountdown?.key === key) return;
+  if (specialAwardCountdown?.key === key) return;
+  const remainingMs = specialAwardRemainingMs(nextAward);
+  if (remainingMs <= 0) {
+    clearSpecialAwardCountdown();
+    return;
+  }
+  clearSpecialAwardCountdown();
+  specialAwardCountdown = { key, endsAt: Date.now() + remainingMs };
+  specialAwardTimer = window.setInterval(() => {
+    if (!specialAwardCountdown) return;
+    if (Date.now() >= specialAwardCountdown.endsAt) clearSpecialAwardCountdown();
+    render();
+  }, 200);
+}
+
+function specialAwardRemainingMs(award) {
+  const revealedAt = Date.parse(award?.revealedAt);
+  if (!Number.isFinite(revealedAt)) return SPECIAL_AWARD_COUNTDOWN_MS;
+  const serverTime = Date.parse(award?.serverTime);
+  const now = Number.isFinite(serverTime) ? serverTime : Date.now();
+  return Math.max(0, revealedAt + SPECIAL_AWARD_COUNTDOWN_MS - now);
+}
+
+function secondsRemainingForSpecialAward(key) {
+  if (!specialAwardCountdown || specialAwardCountdown.key !== key) return 0;
+  const remaining = specialAwardCountdown.endsAt - Date.now();
+  if (remaining <= 0) {
+    clearSpecialAwardCountdown();
+    return 0;
+  }
+  return Math.max(1, Math.ceil(remaining / 1000));
+}
+
+function clearSpecialAwardCountdown() {
+  if (specialAwardTimer) window.clearInterval(specialAwardTimer);
+  specialAwardTimer = null;
+  specialAwardCountdown = null;
 }
 
 function scheduleRevealAnimation(revealKey, variant) {

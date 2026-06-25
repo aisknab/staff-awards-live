@@ -116,4 +116,73 @@ test('admin can reveal an open round and advance to an already-open next questio
   publicState = await participant.json('/api/participant/state');
   assert.equal(publicState.round.status, 'OPEN');
   assert.equal(publicState.round.award.title, 'Reply All Hero');
+
 });
+
+test('final next award reveals quickest to judge special award', async (t) => {
+  const ctx = await startTestApp();
+  t.after(() => ctx.stop());
+  const admin = ctx.client();
+  await loginAdmin(admin);
+  let state = await createEvent(admin);
+  state = await openFirstRound(admin, state);
+
+  const participants = [ctx.client(), ctx.client(), ctx.client()];
+  const joined = await Promise.all(participants.map((participant) => joinWithCode(participant, state.event.access.manualCode)));
+
+  await voteForFirstNominee(participants, joined);
+  setVoteLatencies(ctx.app.services.database, state.event.currentRound.id, [
+    [joined[0].participant.id, 1000],
+    [joined[1].participant.id, 500],
+    [joined[2].participant.id, 2000],
+  ]);
+
+  state = await admin.json(`/api/admin/state?eventId=${state.event.id}`);
+  state = await adminAction(admin, state, 'REVEAL_WINNER');
+  state = await adminAction(admin, state, 'NEXT_QUESTION');
+  assert.equal(state.event.currentRound.status, 'OPEN');
+
+  const secondRoundStates = await Promise.all(participants.map((participant) => participant.json('/api/participant/state')));
+  await voteForFirstNominee(participants, secondRoundStates);
+  setVoteLatencies(ctx.app.services.database, state.event.currentRound.id, [
+    [joined[0].participant.id, 1000],
+    [joined[1].participant.id, 700],
+    [joined[2].participant.id, 800],
+  ]);
+
+  state = await admin.json(`/api/admin/state?eventId=${state.event.id}`);
+  state = await adminAction(admin, state, 'REVEAL_WINNER');
+  state = await adminAction(admin, state, 'NEXT_AWARD');
+
+  assert.equal(state.event.status, 'FINISHED');
+  assert.equal(state.specialAward.type, 'quickest-judge');
+  assert.equal(state.specialAward.winnerLabel, joined[1].participant.label);
+  assert.equal(state.specialAward.averageMs, 600);
+
+  const winnerState = await participants[1].json('/api/participant/state');
+  assert.equal(winnerState.specialAward.winnerLabel, joined[1].participant.label);
+  assert.equal(winnerState.specialAward.isWinner, true);
+  assert.equal(winnerState.specialAward.averageSeconds, 0.6);
+
+  const otherState = await participants[0].json('/api/participant/state');
+  assert.equal(otherState.specialAward.isWinner, false);
+  assert.equal(otherState.specialAward.winnerLabel, joined[1].participant.label);
+});
+
+async function voteForFirstNominee(participants, states) {
+  const nomineeId = states[0].round.nominees[0].id;
+  await Promise.all(participants.map((participant, index) => participant.json('/api/participant/vote', {
+    method: 'PUT',
+    body: { roundId: states[index].round.id, nomineeId, requestId: crypto.randomUUID(), expectedRoundVersion: states[index].round.version },
+  })));
+}
+
+function setVoteLatencies(database, roundId, participantLatencies) {
+  const openedAt = '2026-01-01T00:00:00.000Z';
+  database.prepare('UPDATE rounds SET opened_at = ? WHERE id = ?').run(openedAt, roundId);
+  const update = database.prepare('UPDATE votes SET created_at = ?, updated_at = ? WHERE round_id = ? AND participant_id = ?');
+  for (const [participantId, latencyMs] of participantLatencies) {
+    const votedAt = new Date(Date.parse(openedAt) + latencyMs).toISOString();
+    update.run(votedAt, votedAt, roundId, participantId);
+  }
+}

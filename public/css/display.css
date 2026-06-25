@@ -74,6 +74,21 @@ body { overflow: hidden; background: radial-gradient(circle at 50% 0%, #282c3b 0
   font-size: clamp(1rem, 1.9vh, 1.7rem);
   line-height: 1.25;
 }
+.quickest-award-display .display-kicker { color: #ffd166; }
+.quickest-award-display .award-title { color: #ffe7a3; }
+.quickest-award-card {
+  border-color: rgba(255, 209, 102, .72);
+  background: radial-gradient(circle at 50% 0%, rgba(255, 232, 150, .24), rgba(143, 91, 8, .2)), rgba(17, 20, 26, .76);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, .3), 0 0 72px rgba(255, 209, 102, .2);
+}
+.quickest-award-card .display-winner-name {
+  color: #ffd166;
+  text-shadow: 0 0 28px rgba(255, 209, 102, .24);
+}
+.special-award-countdown .display-countdown-number {
+  border-color: rgba(255, 209, 102, .72);
+  background: rgba(255, 209, 102, .16);
+}
 .display-kicker { text-transform: uppercase; letter-spacing: .18em; font-weight: 850; color: var(--accent-strong); font-size: clamp(1rem, 1.5vw, 1.7rem); }
 .blank-screen { width: 100vw; height: 100vh; background: #0b0b0c; }
 .fullscreen-button { position: fixed; top: 1rem; right: 1rem; z-index: 5; opacity: .35; }

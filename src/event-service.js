@@ -173,6 +173,7 @@ export class EventService {
       event: publicEvent(event),
       participant: { id: participant.id, label: participant.anonymous_label },
       progress,
+      specialAward: this.specialAwardState(event, participant.id),
       round: null,
     };
     if (!round) return state;
@@ -198,6 +199,7 @@ export class EventService {
       role: 'DISPLAY',
       event: publicEvent(event),
       progress: this.progress(event.id),
+      specialAward: this.specialAwardState(event),
       join: { manualCode: this.accessDetails(event).manualCode, qrUrl: '/api/display/join-qr.svg' },
       round: round ? {
         id: round.id,
@@ -223,6 +225,7 @@ export class EventService {
       event: this.getAdminEvent(eventId),
       progress: this.progress(eventId),
       participants,
+      specialAward: this.specialAwardState(event),
       namedTally: round ? {
         roundId: round.id,
         votesCast: this.results.voteCount(round.id),
@@ -701,6 +704,40 @@ export class EventService {
       WHERE event_id = ? AND id <> ? AND opened_at IS NOT NULL
     `).get(eventId, excludeRoundId);
     return Number(row?.count ?? 0) > 0;
+  }
+
+  specialAwardState(event, participantId = null) {
+    if (!this.specialAwardAvailable(event)) return null;
+    const winner = this.results.quickestJudge(event.id);
+    if (!winner) return null;
+    const averageMs = Math.round(winner.averageMs);
+    return {
+      type: 'quickest-judge',
+      key: `${event.id}:${event.finished_at}:quickest-judge`,
+      title: 'Quickest to Judge Award',
+      revealedAt: event.finished_at,
+      serverTime: nowIso(),
+      winnerLabel: winner.label,
+      isWinner: participantId ? winner.participantId === participantId : false,
+      averageMs,
+      averageSeconds: Math.round(averageMs / 100) / 10,
+      votesMeasured: winner.measuredVotes,
+      participantsMeasured: winner.participantCount,
+      winnerVotesCast: winner.votesCast,
+    };
+  }
+
+  specialAwardAvailable(event) {
+    if (event.status !== 'FINISHED' || !event.finished_at) return false;
+    const counts = this.db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM awards WHERE event_id = ?) AS awardCount,
+        (SELECT COUNT(DISTINCT award_id) FROM rounds
+         WHERE event_id = ? AND completed_at IS NOT NULL AND revealed_at IS NOT NULL) AS completedAwards
+    `).get(event.id, event.id);
+    const awardCount = Number(counts?.awardCount ?? 0);
+    const completedAwards = Number(counts?.completedAwards ?? 0);
+    return awardCount > 0 && completedAwards >= awardCount;
   }
 
   nextIncompleteAward(eventId) {

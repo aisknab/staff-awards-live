@@ -576,7 +576,10 @@ function actionButtons(event, round) {
     else add('Reveal winner', 'REVEAL_WINNER');
     add('Reopen voting', 'REOPEN_VOTING', 'button warning');
   }
-  if (round?.status === 'REVEALED') add(isFinalRevealedQuestion() ? 'Finish event' : 'Next question', 'NEXT_QUESTION');
+  if (round?.status === 'REVEALED') {
+    if (isFinalRevealedQuestion()) add('Next award', 'NEXT_AWARD');
+    else add('Next question', 'NEXT_QUESTION');
+  }
   if (['LOBBY', 'LIVE'].includes(event.status)) {
     add(event.joinOpen ? 'Close joining' : 'Reopen joining', event.joinOpen ? 'CLOSE_JOINS' : 'REOPEN_JOINS', 'button secondary');
     if (round && ['PREVIEW', 'OPEN', 'LOCKED'].includes(round.status)) add('Reset round', 'RESET_CURRENT_ROUND', 'button danger');

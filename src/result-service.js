@@ -52,6 +52,40 @@ export class ResultService {
     return { tally, topCount, winners, votesCast: tally.reduce((sum, row) => sum + row.count, 0) };
   }
 
+  quickestJudge(eventId) {
+    const rows = this.db.prepare(`
+      SELECT p.id AS participantId, p.anonymous_label AS label,
+             v.created_at AS votedAt, r.opened_at AS openedAt
+      FROM votes v
+      JOIN rounds r ON r.id = v.round_id
+      JOIN participants p ON p.id = v.participant_id
+      WHERE r.event_id = ?
+        AND r.opened_at IS NOT NULL
+        AND p.status = 'ACTIVE'
+    `).all(eventId);
+    const totals = new Map();
+    for (const row of rows) {
+      const openedAt = Date.parse(row.openedAt);
+      const votedAt = Date.parse(row.votedAt);
+      if (!Number.isFinite(openedAt) || !Number.isFinite(votedAt)) continue;
+      const elapsedMs = Math.max(0, votedAt - openedAt);
+      const existing = totals.get(row.participantId) ?? {
+        participantId: row.participantId,
+        label: row.label,
+        totalMs: 0,
+        votesCast: 0,
+      };
+      existing.totalMs += elapsedMs;
+      existing.votesCast += 1;
+      totals.set(row.participantId, existing);
+    }
+    const ranked = [...totals.values()]
+      .map((row) => ({ ...row, averageMs: row.totalMs / row.votesCast }))
+      .sort((a, b) => a.averageMs - b.averageMs || b.votesCast - a.votesCast || a.label.localeCompare(b.label));
+    const winner = ranked[0] ?? null;
+    return winner ? { ...winner, participantCount: ranked.length, measuredVotes: rows.length } : null;
+  }
+
   revealed(roundId) {
     const rows = this.db.prepare(`
       SELECT rr.nominee_id AS nomineeId, n.display_name AS name, n.subtitle,

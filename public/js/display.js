@@ -6,13 +6,17 @@ import { playRevealBurst } from './common/reveal-effects.js';
 const root = document.querySelector('#app');
 const api = new ApiClient();
 const REVEAL_COUNTDOWN_MS = 5000;
+const SPECIAL_AWARD_COUNTDOWN_MS = 5000;
 let state = null;
 let connection = null;
 let connectionStatus = 'reconnecting';
 let message = '';
 const animatedRevealKeys = new Set();
+const animatedSpecialAwardKeys = new Set();
 let revealCountdown = null;
 let countdownTimer = null;
+let specialAwardCountdown = null;
+let specialAwardTimer = null;
 
 void initialise();
 
@@ -21,6 +25,7 @@ async function initialise() {
   if (token) {
     try {
       state = await api.request('/api/display/join', { method: 'POST', body: { token }, csrf: false });
+      syncSpecialAwardCountdown(null, state.specialAward);
       history.replaceState({}, '', '/display');
       connect();
     } catch (error) {
@@ -32,6 +37,7 @@ async function initialise() {
   }
   try {
     state = await api.request('/api/display/state');
+    syncSpecialAwardCountdown(null, state.specialAward);
     connect();
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 401) message = friendlyError(error);
@@ -55,10 +61,13 @@ function connect() {
         state = null;
         message = 'This display link was rotated. Open the new display URL from the controller.';
         connection?.close();
+        clearSpecialAwardCountdown();
       } else if (type === 'snapshot') {
         const previousRound = state?.round;
+        const previousSpecialAward = state?.specialAward;
         state = payload;
         startCountdownForTransition(previousRound, state.round, 'display');
+        syncSpecialAwardCountdown(previousSpecialAward, state.specialAward);
       } else if (type === 'presence' && state) {
         state.progress = payload.progress;
       } else if (type === 'vote-progress' && state?.round?.id === payload.roundId) {
@@ -113,6 +122,7 @@ function render() {
 }
 
 function contentForState() {
+  if (state.specialAward) return specialAwardDisplay(state.specialAward);
   if (state.event.status === 'FINISHED') return panel('Event complete', 'Thanks for taking part.');
   const round = state.round;
   if (revealCountdown && revealCountdown.roundId !== round?.id) clearRevealCountdown();
@@ -198,6 +208,56 @@ function reveal(round) {
   );
 }
 
+function specialAwardDisplay(award) {
+  const countdownSeconds = secondsRemainingForSpecialAward(specialAwardKey(award));
+  if (countdownSeconds) return specialAwardCountdownPanel(award, countdownSeconds);
+  return specialAwardReveal(award);
+}
+
+function specialAwardCountdownPanel(award, seconds) {
+  return h('div', { class: 'display-panel display-countdown special-award-countdown', role: 'status', 'aria-live': 'assertive' },
+    h('p', { class: 'display-kicker', text: 'Special award' }),
+    h('p', { class: 'display-subtitle', text: award.title ?? 'Quickest to Judge Award' }),
+    h('div', { class: 'display-countdown-number', text: seconds }),
+  );
+}
+
+function specialAwardReveal(award) {
+  const key = specialAwardKey(award);
+  scheduleSpecialAwardAnimation(award);
+  return h('div', { class: 'display-panel display-winner quickest-award-display winner-burst', dataset: { specialAwardKey: key } },
+    h('div', { class: 'reveal-content' },
+      h('p', { class: 'sr-only', 'aria-live': 'polite', text: `${award.winnerLabel} wins the quickest to judge award` }),
+      h('p', { class: 'display-kicker', text: 'Quickest to judge award' }),
+      h('p', { class: 'display-subtitle award-title', text: 'Fastest average vote time' }),
+      h('div', { class: 'display-winner-list' }, h('div', { class: 'display-winner-card quickest-award-card' },
+        h('h1', { class: 'display-winner-name', text: award.winnerLabel }),
+        h('p', { class: 'display-winner-meta', text: specialAwardDetail(award) || 'Fastest average vote time' }),
+      )),
+    ),
+  );
+}
+
+function specialAwardDetail(award) {
+  if (!Number.isFinite(Number(award.averageSeconds))) return '';
+  const votes = Number(award.winnerVotesCast ?? 0);
+  return `${Number(award.averageSeconds).toFixed(1)}s average across ${votes} vote${votes === 1 ? '' : 's'}`;
+}
+
+function scheduleSpecialAwardAnimation(award) {
+  const key = specialAwardKey(award);
+  if (!key || animatedSpecialAwardKeys.has(key)) return;
+  animatedSpecialAwardKeys.add(key);
+  queueMicrotask(() => {
+    const node = document.querySelector('[data-special-award-key]');
+    if (node?.dataset.specialAwardKey === key) playRevealBurst(node, { variant: 'display' });
+  });
+}
+
+function specialAwardKey(award) {
+  return award?.key ?? `${award?.type ?? 'special'}:${award?.revealedAt ?? ''}:${award?.winnerLabel ?? ''}`;
+}
+
 function winnerVoteCount(winner) {
   return winner.voteCount ?? winner.count ?? 0;
 }
@@ -247,6 +307,52 @@ function clearRevealCountdown() {
   if (countdownTimer) window.clearInterval(countdownTimer);
   countdownTimer = null;
   revealCountdown = null;
+}
+
+function syncSpecialAwardCountdown(previousAward, nextAward) {
+  if (!nextAward) {
+    clearSpecialAwardCountdown();
+    return;
+  }
+  const key = specialAwardKey(nextAward);
+  if (previousAward?.key === key && specialAwardCountdown?.key === key) return;
+  if (specialAwardCountdown?.key === key) return;
+  const remainingMs = specialAwardRemainingMs(nextAward);
+  if (remainingMs <= 0) {
+    clearSpecialAwardCountdown();
+    return;
+  }
+  clearSpecialAwardCountdown();
+  specialAwardCountdown = { key, endsAt: Date.now() + remainingMs };
+  specialAwardTimer = window.setInterval(() => {
+    if (!specialAwardCountdown) return;
+    if (Date.now() >= specialAwardCountdown.endsAt) clearSpecialAwardCountdown();
+    render();
+  }, 200);
+}
+
+function specialAwardRemainingMs(award) {
+  const revealedAt = Date.parse(award?.revealedAt);
+  if (!Number.isFinite(revealedAt)) return SPECIAL_AWARD_COUNTDOWN_MS;
+  const serverTime = Date.parse(award?.serverTime);
+  const now = Number.isFinite(serverTime) ? serverTime : Date.now();
+  return Math.max(0, revealedAt + SPECIAL_AWARD_COUNTDOWN_MS - now);
+}
+
+function secondsRemainingForSpecialAward(key) {
+  if (!specialAwardCountdown || specialAwardCountdown.key !== key) return 0;
+  const remaining = specialAwardCountdown.endsAt - Date.now();
+  if (remaining <= 0) {
+    clearSpecialAwardCountdown();
+    return 0;
+  }
+  return Math.max(1, Math.ceil(remaining / 1000));
+}
+
+function clearSpecialAwardCountdown() {
+  if (specialAwardTimer) window.clearInterval(specialAwardTimer);
+  specialAwardTimer = null;
+  specialAwardCountdown = null;
 }
 
 function scheduleRevealAnimation(revealKey, variant) {

@@ -1,3 +1,17 @@
+body.quickest-winner-active {
+  color-scheme: light;
+  --bg: #f2bd2f;
+  --surface: #ffe084;
+  --surface-2: #ffd76a;
+  --border: rgba(73, 48, 0, .26);
+  --text: #211600;
+  --muted: #5d4300;
+  --accent: #7c5200;
+  --accent-strong: #5b3a00;
+  --warning: #211600;
+  background: radial-gradient(circle at 50% 0%, #fff2a5 0, #f3c336 46%, #c88b14 100%);
+}
+
 .participant-app { min-height: 100dvh; padding: max(1rem, env(safe-area-inset-top)) 1rem max(1.5rem, env(safe-area-inset-bottom)); }
 .participant-shell { width: min(680px, 100%); margin: 0 auto; display: grid; gap: 1rem; }
 .participant-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .25rem .15rem; }
@@ -54,6 +68,42 @@
   font-weight: 950;
   animation: countdown-pulse .95s cubic-bezier(.2,.8,.2,1) infinite;
 }
+.special-award-countdown .countdown-number {
+  border-color: rgba(255, 209, 102, .72);
+  background: rgba(255, 209, 102, .16);
+}
+.quickest-winner-shell {
+  min-height: calc(100dvh - max(1rem, env(safe-area-inset-top)) - max(1.5rem, env(safe-area-inset-bottom)));
+}
+.quickest-winner-active .participant-header {
+  color: #211600;
+}
+.quickest-winner-active .pill {
+  background: rgba(255, 255, 255, .38);
+  border-color: rgba(73, 48, 0, .28);
+  color: #3d2b00;
+}
+.quickest-award-winner {
+  min-height: calc(100dvh - 7rem);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 1rem;
+  text-align: center;
+  color: #211600;
+  border: 1px solid rgba(73, 48, 0, .24);
+  border-radius: 20px;
+  background: radial-gradient(circle at 50% 15%, #fff4a8 0, #ffd34d 45%, #d99513 100%);
+  box-shadow: 0 28px 80px rgba(87, 55, 0, .28), inset 0 0 80px rgba(255, 255, 255, .22);
+}
+.quickest-award-winner .title {
+  font-size: clamp(2.4rem, 12vw, 5.4rem);
+  line-height: .98;
+  overflow-wrap: anywhere;
+}
+.quickest-award-winner .eyebrow,
+.quickest-award-winner .subtitle { color: #4f3900; }
+.special-award-card { border-color: rgba(255, 209, 102, .42); }
 .reveal-card {
   text-align: center;
   box-shadow: 0 0 0 1px rgba(255, 209, 102, .18), 0 22px 60px rgba(0, 0, 0, .34), 0 0 56px rgba(123, 140, 255, .16);
