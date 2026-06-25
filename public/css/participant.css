@@ -126,6 +126,13 @@ body.quickest-winner-active {
 .quickest-award-winner .eyebrow,
 .quickest-award-winner .subtitle { color: #653300; }
 .special-award-card { border-color: rgba(235, 93, 11, .32); }
+.closing-award-card {
+  border-color: rgba(127, 226, 181, .46);
+  background: linear-gradient(180deg, rgba(255, 250, 247, .82), rgba(255, 224, 207, .9));
+  box-shadow: 0 24px 70px rgba(166, 61, 0, .18), 0 0 50px rgba(127, 226, 181, .15);
+}
+.closing-award-card .title { font-size: clamp(2rem, 10vw, 4.5rem); overflow-wrap: anywhere; }
+.closing-award-card .subtitle { color: #653300; font-size: clamp(1.05rem, 4.4vw, 1.45rem); }
 .reveal-card {
   text-align: center;
   box-shadow: 0 0 0 1px rgba(235, 93, 11, .16), 0 22px 60px rgba(46, 31, 20, .18), 0 0 56px rgba(235, 93, 11, .13);

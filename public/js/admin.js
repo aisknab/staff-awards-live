@@ -654,6 +654,7 @@ function actionButtons(event, round) {
     if (round?.status !== 'REVEALED') add('Finish event', 'FINISH_EVENT', 'button danger');
   }
   if (event.status === 'FINISHED') {
+    if (appState?.specialAward?.type === 'quickest-judge') add('Show final award', 'SHOW_CLOSING_AWARD');
     add('Reopen event', 'REOPEN_EVENT');
     add('Revise choices/questions', 'REVISE_FINISHED_CONFIG', 'button warning');
     add('Restart event', 'RESTART_EVENT', 'button danger');

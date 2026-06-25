@@ -188,6 +188,18 @@ test('final next award reveals quickest to judge special award', async (t) => {
   const otherState = await participants[0].json('/api/participant/state');
   assert.equal(otherState.specialAward.isWinner, false);
   assert.equal(otherState.specialAward.winnerLabel, joined[1].participant.label);
+
+  state = await adminAction(admin, state, 'SHOW_CLOSING_AWARD');
+  assert.equal(state.specialAward.type, 'closing-message');
+  assert.equal(state.specialAward.title, '"Criteo Australia"');
+  assert.equal(state.specialAward.kicker, 'Final award');
+  assert.equal(state.specialAward.message, 'for smashing it in APAC for H1. Have fun this evening, not too hard (Nicola is here)');
+  assert.equal(state.specialAward.isWinner, false);
+
+  const closingState = await participants[0].json('/api/participant/state');
+  assert.equal(closingState.specialAward.type, 'closing-message');
+  assert.equal(closingState.specialAward.title, '"Criteo Australia"');
+  assert.equal(closingState.specialAward.message, 'for smashing it in APAC for H1. Have fun this evening, not too hard (Nicola is here)');
 });
 
 async function voteForFirstNominee(participants, states) {

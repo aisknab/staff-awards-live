@@ -283,13 +283,14 @@ function specialAwardDisplay(award) {
 
 function specialAwardCountdownPanel(award, seconds) {
   return h('div', { class: 'display-panel display-countdown special-award-countdown', role: 'status', 'aria-live': 'assertive' },
-    h('p', { class: 'display-kicker', text: 'Special award' }),
+    h('p', { class: 'display-kicker', text: award.kicker ?? 'Special award' }),
     h('p', { class: 'display-subtitle', text: award.title ?? 'Quickest to Judge Award' }),
     h('div', { class: 'display-countdown-number', text: seconds }),
   );
 }
 
 function specialAwardReveal(award) {
+  if (award.type === 'closing-message') return closingAwardReveal(award);
   const key = specialAwardKey(award);
   scheduleSpecialAwardAnimation(award);
   return h('div', { class: 'display-panel display-winner quickest-award-display winner-burst', dataset: { specialAwardKey: key } },
@@ -305,7 +306,23 @@ function specialAwardReveal(award) {
   );
 }
 
+function closingAwardReveal(award) {
+  const key = specialAwardKey(award);
+  scheduleSpecialAwardAnimation(award);
+  return h('div', { class: 'display-panel display-winner closing-award-display winner-burst', dataset: { specialAwardKey: key } },
+    h('div', { class: 'reveal-content' },
+      h('p', { class: 'sr-only', 'aria-live': 'polite', text: `${award.title} ${award.message}` }),
+      h('p', { class: 'display-kicker', text: award.kicker ?? 'Final award' }),
+      h('div', { class: 'display-winner-list' }, h('div', { class: 'display-winner-card closing-award-card' },
+        h('h1', { class: 'display-winner-name', text: award.title }),
+        h('p', { class: 'display-winner-meta', text: award.message }),
+      )),
+    ),
+  );
+}
+
 function specialAwardDetail(award) {
+  if (award.type === 'closing-message') return award.message ?? '';
   if (!Number.isFinite(Number(award.averageSeconds))) return '';
   const votes = Number(award.winnerVotesCast ?? 0);
   return `${Number(award.averageSeconds).toFixed(1)}s average across ${votes} vote${votes === 1 ? '' : 's'}`;

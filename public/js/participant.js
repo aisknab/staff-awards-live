@@ -328,12 +328,13 @@ function revealScreen(round) {
 function specialAwardScreen(award) {
   const countdownSeconds = secondsRemainingForSpecialAward(specialAwardKey(award));
   if (countdownSeconds) return specialAwardCountdownScreen(award, countdownSeconds);
+  if (award.type === 'closing-message') return closingAwardScreen(award);
   return award.isWinner ? specialAwardWinnerScreen(award) : specialAwardAudienceScreen(award);
 }
 
 function specialAwardCountdownScreen(award, seconds) {
   return h('section', { class: 'participant-countdown special-award-countdown', role: 'status', 'aria-live': 'assertive' },
-    h('p', { class: 'eyebrow', text: 'Special award' }),
+    h('p', { class: 'eyebrow', text: award.kicker ?? 'Special award' }),
     h('h1', { class: 'title', text: award.title ?? 'Quickest to Judge Award' }),
     h('div', { class: 'countdown-number', text: seconds }),
   );
@@ -360,7 +361,21 @@ function specialAwardAudienceScreen(award) {
   );
 }
 
+function closingAwardScreen(award) {
+  const key = specialAwardKey(award);
+  scheduleSpecialAwardCelebration(award);
+  return h('section', { class: 'participant-card hero special-award-card closing-award-card winner-burst', dataset: { specialAwardKey: key } },
+    h('div', { class: 'reveal-content' },
+      h('p', { class: 'sr-only', 'aria-live': 'polite', text: `${award.title} ${award.message}` }),
+      h('p', { class: 'eyebrow', text: award.kicker ?? 'Final award' }),
+      h('h1', { class: 'title', text: award.title }),
+      h('p', { class: 'subtitle', text: award.message }),
+    ),
+  );
+}
+
 function specialAwardDetail(award) {
+  if (award.type === 'closing-message') return award.message ?? '';
   if (!Number.isFinite(Number(award.averageSeconds))) return '';
   const votes = Number(award.winnerVotesCast ?? 0);
   return `${Number(award.averageSeconds).toFixed(1)}s average across ${votes} vote${votes === 1 ? '' : 's'}`;
@@ -368,7 +383,7 @@ function specialAwardDetail(award) {
 
 function isSpecialAwardWinnerShowing() {
   const award = state?.specialAward;
-  if (!award?.isWinner) return false;
+  if (!award?.isWinner && award?.type !== 'closing-message') return false;
   return secondsRemainingForSpecialAward(specialAwardKey(award)) === 0;
 }
 

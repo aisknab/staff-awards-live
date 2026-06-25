@@ -5,6 +5,13 @@ import { csvCell, id, nowIso } from './utils.js';
 
 const EVENT_STATES = ['DRAFT', 'LOBBY', 'LIVE', 'FINISHED'];
 const ROUND_STATES = ['PENDING', 'PREVIEW', 'OPEN', 'LOCKED', 'REVEALED', 'COMPLETE'];
+const CLOSING_AWARD_ACTION = 'SHOW_CLOSING_AWARD';
+const CLOSING_AWARD = {
+  type: 'closing-message',
+  title: '"Criteo Australia"',
+  kicker: 'Final award',
+  message: 'for smashing it in APAC for H1. Have fun this evening, not too hard (Nicola is here)',
+};
 
 export class EventService {
   constructor(database, config, resultService, maskedTallyService = null) {
@@ -396,6 +403,7 @@ export class EventService {
       BLANK_DISPLAY: () => this.setBlanked(event, true),
       UNBLANK_DISPLAY: () => this.setBlanked(event, false),
       FINISH_EVENT: () => this.finishEvent(event),
+      SHOW_CLOSING_AWARD: () => this.showClosingAward(event),
       REOPEN_EVENT: () => this.reopenEvent(event),
       RESTART_EVENT: () => this.restartEvent(event),
       REVISE_FINISHED_CONFIG: () => this.reviseFinishedConfig(event),
@@ -615,6 +623,14 @@ export class EventService {
     });
   }
 
+  showClosingAward(event) {
+    if (event.status !== 'FINISHED') throw conflict('INVALID_STATE_TRANSITION', 'Only finished events can show the final award');
+    if (!this.specialAwardAvailable(event)) throw conflict('INVALID_STATE_TRANSITION', 'Complete all awards before showing the final award');
+    if (this.closingAwardShownAt(event)) throw conflict('INVALID_STATE_TRANSITION', 'The final award is already showing');
+    const now = nowIso();
+    this.db.prepare('UPDATE events SET version = version + 1, updated_at = ? WHERE id = ?').run(now, event.id);
+  }
+
   reopenEvent(event) {
     if (event.status !== 'FINISHED') throw conflict('INVALID_STATE_TRANSITION', 'Only finished events can be reopened');
     this.requireNoOtherActiveEvent(event);
@@ -720,6 +736,16 @@ export class EventService {
 
   specialAwardState(event, participantId = null) {
     if (!this.specialAwardAvailable(event)) return null;
+    const closingRevealedAt = this.closingAwardShownAt(event);
+    if (closingRevealedAt) {
+      return {
+        ...CLOSING_AWARD,
+        key: `${event.id}:${closingRevealedAt}:${CLOSING_AWARD.type}`,
+        revealedAt: closingRevealedAt,
+        serverTime: nowIso(),
+        isWinner: false,
+      };
+    }
     const winner = this.results.quickestJudge(event.id);
     if (!winner) return null;
     const averageMs = Math.round(winner.averageMs);
@@ -750,6 +776,17 @@ export class EventService {
     const awardCount = Number(counts?.awardCount ?? 0);
     const completedAwards = Number(counts?.completedAwards ?? 0);
     return awardCount > 0 && completedAwards >= awardCount;
+  }
+
+  closingAwardShownAt(event) {
+    if (!event?.finished_at) return null;
+    return this.db.prepare(`
+      SELECT created_at AS revealedAt
+      FROM audit_log
+      WHERE event_id = ? AND action = ? AND created_at >= ?
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT 1
+    `).get(event.id, CLOSING_AWARD_ACTION, event.finished_at)?.revealedAt ?? null;
   }
 
   nextIncompleteAward(eventId) {
