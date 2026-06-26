@@ -15,7 +15,7 @@ import { serveStatic } from './static-files.js';
 import { getClientIp, handleError, readJson, requestId, sendJson, sendText } from './http.js';
 import { hashPassword, requireAdminConfigured, validateCsrf, validateOrigin, verifyPassword } from './security.js';
 import { idText, object, text } from './validation.js';
-import { badRequest, forbidden, notFound, unauthenticated } from './errors.js';
+import { badRequest, forbidden, notFound } from './errors.js';
 
 export function createApplication(options = {}) {
   const config = options.config ?? loadConfig(options.configOverrides);
@@ -148,7 +148,7 @@ export function createApplication(options = {}) {
       const dashboardPasswordHash = String(event.public_dashboard_password_hash ?? '');
       if (dashboardPasswordHash) {
         const password = String(body.password ?? '');
-        if (!password) throw unauthenticated('Dashboard password required');
+        if (!password) return sendJson(res, 200, { role: 'DASHBOARD', passwordRequired: true });
         if (!await verifyPassword(password, dashboardPasswordHash)) throw forbidden('Invalid dashboard password');
       }
       return sendJson(res, 200, eventService.publicDashboardState(event));

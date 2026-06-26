@@ -10,6 +10,7 @@ const MIME = Object.freeze({
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.json': 'application/json; charset=utf-8',
+  '.otf': 'font/otf',
 });
 
 export async function serveStatic(req, res, publicDir, pathname) {

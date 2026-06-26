@@ -223,8 +223,8 @@ test('final next award reveals quickest to judge special award', async (t) => {
   state = await admin.json('/api/admin/dashboard-password', { method: 'PUT', body: { eventId: state.event.id, expectedEventVersion: state.event.version, password: 'shareit' } });
   assert.equal(state.event.publicDashboardPasswordSet, true);
 
-  const lockedDashboard = await anonymous.request('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: dashboardToken } });
-  assert.equal(lockedDashboard.response.status, 401);
+  const lockedDashboard = await anonymous.json('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: dashboardToken } });
+  assert.equal(lockedDashboard.passwordRequired, true);
   const wrongPasswordDashboard = await anonymous.request('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: dashboardToken, password: 'wrong' } });
   assert.equal(wrongPasswordDashboard.response.status, 403);
   const unlockedDashboard = await anonymous.json('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: dashboardToken, password: 'shareit' } });

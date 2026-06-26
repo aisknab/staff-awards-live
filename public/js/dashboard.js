@@ -27,18 +27,19 @@ async function loadDashboard(password = '') {
   message = '';
   render();
   try {
-    state = await api.request('/api/dashboard/state', { method: 'POST', body: { token: accessToken, password }, csrf: false });
+    const payload = await api.request('/api/dashboard/state', { method: 'POST', body: { token: accessToken, password }, csrf: false });
+    if (payload?.passwordRequired) {
+      state = null;
+      passwordRequired = true;
+      return;
+    }
+    state = payload;
     passwordRequired = false;
     passwordDraft = '';
   } catch (error) {
     state = null;
-    if (error instanceof ApiError && error.status === 401) {
-      passwordRequired = true;
-      message = '';
-    } else {
-      passwordRequired = error instanceof ApiError && error.status === 403 ? passwordRequired : false;
-      message = friendlyError(error);
-    }
+    passwordRequired = error instanceof ApiError && error.status === 403 ? passwordRequired : false;
+    message = friendlyError(error);
   } finally {
     busy = false;
     render();
@@ -84,6 +85,20 @@ function render() {
 }
 
 function passwordScreen() {
+  let unlockButton = null;
+  const passwordInput = h('input', {
+    class: 'input',
+    type: 'password',
+    value: passwordDraft,
+    autocomplete: 'current-password',
+    autofocus: true,
+    placeholder: 'Password',
+    onInput: (event) => {
+      passwordDraft = event.target.value;
+      if (unlockButton) unlockButton.disabled = busy || !passwordDraft;
+    },
+  });
+  unlockButton = h('button', { class: 'button', type: 'submit', disabled: busy || !passwordDraft, text: busy ? 'Checking...' : 'Unlock' });
   return h('main', { class: 'dashboard-shell' }, dashboardHeader(null), h('section', { class: 'dashboard-password-panel' },
     h('div', {},
       h('p', { class: 'eyebrow', text: 'Protected dashboard' }),
@@ -91,8 +106,8 @@ function passwordScreen() {
       h('p', { text: message || 'This results dashboard is password protected.' }),
     ),
     h('form', { class: 'dashboard-password-form', onSubmit: submitPassword },
-      h('input', { class: 'input', type: 'password', value: passwordDraft, autocomplete: 'current-password', autofocus: true, placeholder: 'Password', onInput: (event) => { passwordDraft = event.target.value; } }),
-      h('button', { class: 'button', type: 'submit', disabled: busy || !passwordDraft, text: busy ? 'Checking...' : 'Unlock' }),
+      passwordInput,
+      unlockButton,
     ),
   ));
 }
