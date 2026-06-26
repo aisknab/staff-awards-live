@@ -510,7 +510,7 @@ function dashboardMetric(value, label, caption) {
 
 function awardResultCard(award) {
   const complete = award.status === 'complete';
-  return h('article', { class: `result-award-card${complete ? '' : ' pending'}` },
+  return h('article', { class: `result-award-card${complete ? ' complete' : ' pending'}` },
     h('div', { class: 'result-card-head' },
       h('div', {},
         h('h3', { text: award.title }),
@@ -519,6 +519,7 @@ function awardResultCard(award) {
       h('span', { class: 'result-pill', text: resultPillText(award) }),
     ),
     complete ? awardWinnerBlock(award) : h('p', { class: 'muted', text: 'No revealed result for this award.' }),
+    complete ? resultCardStats(award) : null,
     complete ? resultBars(award.results, award.votesCast) : null,
   );
 }
@@ -542,15 +543,42 @@ function awardWinnerBlock(award) {
   );
 }
 
+function resultCardStats(award) {
+  const margin = award.margin === null
+    ? 'No result'
+    : award.winnerMode === 'joint'
+      ? 'Joint'
+      : votesText(award.margin);
+  return h('div', { class: 'result-card-stats' },
+    resultStat('Top score', votesText(award.topCount)),
+    resultStat('Margin', margin),
+    resultStat('Turnout', formatDashboardPercent(award.participationRate)),
+  );
+}
+
+function resultStat(label, value) {
+  return h('div', { class: 'result-stat' },
+    h('span', { text: label }),
+    h('strong', { text: value }),
+  );
+}
+
 function resultBars(results, total) {
-  const rows = (results ?? []).slice(0, 8);
+  const rows = (results ?? []).filter((row) => Number(row.count) > 0).slice(0, 6);
   if (!rows.length) return null;
   const maxCount = Math.max(...rows.map((row) => row.count), 1);
-  return h('div', { class: 'result-bars' }, rows.map((row) => {
+  let previousCount = null;
+  let displayRank = 0;
+  return h('div', { class: 'result-bars' }, rows.map((row, index) => {
+    if (row.count !== previousCount) {
+      displayRank = index + 1;
+      previousCount = row.count;
+    }
     const width = Math.max(0, Math.round((row.count / maxCount) * 100));
     return h('div', { class: `result-bar-row${row.isWinner ? ' winner' : ''}`, 'aria-label': `${row.name}: ${votesText(row.count)}` },
       h('div', { class: 'result-bar-name' },
-        h('span', { text: row.name }),
+        h('span', { class: 'result-rank', text: `#${displayRank}` }),
+        h('span', { class: 'result-bar-person', text: row.name }),
         row.subtitle ? h('small', { text: row.subtitle }) : null,
       ),
       h('div', { class: 'result-bar-track' }, h('div', { class: 'result-bar-fill', style: `--bar-width: ${width}%;` })),
@@ -595,9 +623,10 @@ function biggestWinText(award) {
 }
 
 function leaderboardPanel(rows) {
+  const visibleRows = (rows ?? []).filter((row) => Number(row.votes) > 0 || Number(row.wins) > 0);
   return h('div', { class: 'leaderboard-panel' },
     h('h3', { text: 'Winner board' }),
-    rows.length ? h('ol', { class: 'leaderboard-list' }, rows.slice(0, 6).map((row) => h('li', {},
+    visibleRows.length ? h('ol', { class: 'leaderboard-list' }, visibleRows.slice(0, 6).map((row) => h('li', {},
       h('div', {},
         h('strong', { text: row.name }),
         row.subtitle ? h('small', { text: row.subtitle }) : null,
