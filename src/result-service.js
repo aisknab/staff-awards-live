@@ -105,6 +105,54 @@ export class ResultService {
     };
   }
 
+
+  finalDashboard(eventId) {
+    const participantStats = this.db.prepare(`
+      SELECT
+        COUNT(*) AS totalParticipants,
+        COUNT(CASE WHEN status = 'ACTIVE' THEN 1 END) AS activeParticipants
+      FROM participants
+      WHERE event_id = ?
+    `).get(eventId);
+    const activeParticipants = Number(participantStats?.activeParticipants ?? 0);
+    const totalParticipants = Number(participantStats?.totalParticipants ?? 0);
+    const rows = this.db.prepare(`
+      SELECT a.id AS awardId, a.title AS awardTitle, a.description AS awardDescription,
+             a.sort_order AS awardSortOrder,
+             r.id AS roundId, r.round_number AS roundNumber, r.status AS roundStatus,
+             r.eligible_participant_count AS eligibleParticipants,
+             r.opened_at AS openedAt, r.locked_at AS lockedAt,
+             r.revealed_at AS revealedAt, r.completed_at AS completedAt,
+             rr.nominee_id AS nomineeId, n.display_name AS name, n.subtitle,
+             rr.vote_count AS count, rr.is_winner AS isWinner
+      FROM awards a
+      LEFT JOIN rounds r ON r.award_id = a.id AND r.event_id = a.event_id
+      LEFT JOIN revealed_results rr ON rr.round_id = r.id
+      LEFT JOIN nominees n ON n.id = rr.nominee_id
+      WHERE a.event_id = ?
+      ORDER BY a.sort_order ASC, r.round_number ASC,
+               rr.is_winner DESC, rr.vote_count DESC, n.display_name COLLATE NOCASE ASC
+    `).all(eventId);
+    const awards = groupDashboardAwards(rows, activeParticipants);
+    const completedAwards = awards.filter((award) => award.status === 'complete');
+    const totalVotesCast = completedAwards.reduce((sum, award) => sum + award.votesCast, 0);
+    const nomineeLeaderboard = buildNomineeLeaderboard(completedAwards);
+    return {
+      participantCount: activeParticipants,
+      totalParticipantCount: totalParticipants,
+      summary: {
+        awardCount: awards.length,
+        completedAwards: completedAwards.length,
+        totalVotesCast,
+        averageVotesPerAward: completedAwards.length ? Math.round(totalVotesCast / completedAwards.length) : 0,
+        averageParticipationRate: completedAwards.length ? Math.round(completedAwards.reduce((sum, award) => sum + award.participationRate, 0) / completedAwards.length) : 0,
+      },
+      highlights: buildDashboardHighlights(completedAwards),
+      nomineeLeaderboard,
+      awards,
+    };
+  }
+
   orderedNominees(roundId, participantId) {
     const rows = this.db.prepare(`
       SELECT n.id, n.display_name AS name, n.subtitle
@@ -118,6 +166,132 @@ export class ResultService {
       return ah - bh || a.name.localeCompare(b.name);
     });
   }
+}
+
+
+function groupDashboardAwards(rows, activeParticipants) {
+  const awardsById = new Map();
+  for (const row of rows) {
+    let award = awardsById.get(row.awardId);
+    if (!award) {
+      award = {
+        awardId: row.awardId,
+        title: row.awardTitle,
+        description: row.awardDescription,
+        sortOrder: Number(row.awardSortOrder),
+        rounds: new Map(),
+      };
+      awardsById.set(row.awardId, award);
+    }
+    if (!row.roundId) continue;
+    let round = award.rounds.get(row.roundId);
+    if (!round) {
+      round = {
+        roundId: row.roundId,
+        roundNumber: Number(row.roundNumber),
+        status: row.roundStatus,
+        eligibleParticipants: Number(row.eligibleParticipants) || activeParticipants,
+        openedAt: row.openedAt,
+        lockedAt: row.lockedAt,
+        revealedAt: row.revealedAt,
+        completedAt: row.completedAt,
+        rows: [],
+      };
+      award.rounds.set(row.roundId, round);
+    }
+    if (row.nomineeId) round.rows.push(row);
+  }
+  return [...awardsById.values()]
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title))
+    .map((award) => dashboardAward(award, activeParticipants));
+}
+
+function dashboardAward(award, activeParticipants) {
+  const finalRound = [...award.rounds.values()]
+    .filter((round) => round.revealedAt)
+    .sort((a, b) => b.roundNumber - a.roundNumber)[0] ?? null;
+  if (!finalRound) {
+    return {
+      awardId: award.awardId,
+      title: award.title,
+      description: award.description,
+      sortOrder: award.sortOrder,
+      status: 'pending',
+      roundId: null,
+      roundNumber: null,
+      votesCast: 0,
+      eligibleParticipants: activeParticipants,
+      participationRate: 0,
+      winnerMode: 'none',
+      topCount: 0,
+      margin: null,
+      winners: [],
+      results: [],
+    };
+  }
+  const votesCast = finalRound.rows.reduce((sum, row) => sum + Number(row.count), 0);
+  const results = finalRound.rows.map((row) => revealRow(row, votesCast));
+  const winners = results.filter((row) => row.isWinner);
+  const topCount = winners[0]?.count ?? 0;
+  const nextCount = results.find((row) => !row.isWinner)?.count ?? 0;
+  const eligibleParticipants = finalRound.eligibleParticipants || activeParticipants;
+  return {
+    awardId: award.awardId,
+    title: award.title,
+    description: award.description,
+    sortOrder: award.sortOrder,
+    status: 'complete',
+    roundId: finalRound.roundId,
+    roundNumber: finalRound.roundNumber,
+    openedAt: finalRound.openedAt,
+    lockedAt: finalRound.lockedAt,
+    revealedAt: finalRound.revealedAt,
+    completedAt: finalRound.completedAt,
+    votesCast,
+    eligibleParticipants,
+    participationRate: eligibleParticipants ? Math.round((votesCast / eligibleParticipants) * 100) : 0,
+    winnerMode: winners.length === 0 ? 'none' : winners.length === 1 ? 'single' : 'joint',
+    topCount,
+    margin: winners.length ? Math.max(0, topCount - nextCount) : null,
+    winners,
+    results,
+  };
+}
+
+function buildDashboardHighlights(awards) {
+  const withVotes = awards.filter((award) => award.votesCast > 0);
+  return {
+    highestTurnout: bestOf(withVotes, (a, b) => b.participationRate - a.participationRate || b.votesCast - a.votesCast),
+    closestRace: bestOf(withVotes.filter((award) => award.margin !== null), (a, b) => a.margin - b.margin || b.votesCast - a.votesCast),
+    biggestWin: bestOf(withVotes.filter((award) => award.margin !== null), (a, b) => b.margin - a.margin || b.topCount - a.topCount),
+  };
+}
+
+function bestOf(items, compare) {
+  return [...items].sort(compare)[0] ?? null;
+}
+
+function buildNomineeLeaderboard(awards) {
+  const nominees = new Map();
+  for (const award of awards) {
+    for (const result of award.results) {
+      const nominee = nominees.get(result.nomineeId) ?? {
+        nomineeId: result.nomineeId,
+        name: result.name,
+        subtitle: result.subtitle,
+        votes: 0,
+        wins: 0,
+        finalistCount: 0,
+      };
+      nominee.votes += result.count;
+      nominee.finalistCount += 1;
+      if (result.isWinner) nominee.wins += 1;
+      nominees.set(result.nomineeId, nominee);
+    }
+  }
+  return [...nominees.values()]
+    .sort((a, b) => b.wins - a.wins || b.votes - a.votes || a.name.localeCompare(b.name))
+    .slice(0, 10);
 }
 
 function revealRow(row, votesCast) {

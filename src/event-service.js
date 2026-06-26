@@ -240,6 +240,7 @@ export class EventService {
       progress: this.progress(eventId),
       participants,
       specialAward: this.specialAwardState(event),
+      finalDashboard: event.status === 'FINISHED' ? this.results.finalDashboard(eventId) : null,
       namedTally: round ? {
         roundId: round.id,
         votesCast: this.results.voteCount(round.id),

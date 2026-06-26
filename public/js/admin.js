@@ -444,22 +444,23 @@ async function saveDraft() {
 function liveController() {
   const event = appState.event;
   const round = event.currentRound;
-  return h('div', { class: 'admin-grid' },
+  const finished = event.status === 'FINISHED';
+  return h('div', { class: `admin-grid${finished ? ' dashboard-mode' : ''}` },
     h('div', { class: 'stack' },
       h('section', { class: 'card admin-card stack' },
         h('div', { class: 'row between' },
-          h('div', {}, h('p', { class: 'eyebrow', text: `${event.status} · version ${event.version}` }), h('h1', { class: 'title', text: round?.award?.title ?? event.title }), round?.award?.description ? h('p', { class: 'subtitle', text: round.award.description }) : null),
+          h('div', {}, h('p', { class: 'eyebrow', text: `${event.status} - version ${event.version}` }), h('h1', { class: 'title', text: round?.award?.title ?? event.title }), round?.award?.description ? h('p', { class: 'subtitle', text: round.award.description }) : null),
           round ? h('div', { class: 'row' }, round.status === 'OPEN' ? adminVoteTimer(round) : null, h('span', { class: 'pill connected', text: round.status })) : null,
         ),
         metrics(),
         h('div', { class: 'control-grid' }, ...actionButtons(event, round)),
       ),
-      accessPanel(event),
+      finished ? finalDashboardPanel() : accessPanel(event),
       participantsPanel(),
     ),
     h('aside', { class: 'side-stack' },
       eventDetailsPanel(event),
-      namedTallyPanel(),
+      finished ? dashboardInsightsPanel() : namedTallyPanel(),
       h('section', { class: 'card admin-card stack' },
         h('h3', { text: 'Display controls' }),
         h('div', { class: 'control-grid' },
@@ -469,6 +470,159 @@ function liveController() {
       ),
     ),
   );
+}
+
+function finalDashboardPanel() {
+  const dashboard = appState.finalDashboard;
+  if (!dashboard) {
+    return h('section', { class: 'card admin-card dashboard-panel stack' },
+      h('div', {}, h('p', { class: 'eyebrow', text: 'Result dashboard' }), h('h2', { text: 'No final results yet' })),
+      h('p', { class: 'muted', text: 'Reveal at least one award result before using the dashboard.' }),
+    );
+  }
+  const summary = dashboard.summary ?? {};
+  return h('section', { class: 'card admin-card dashboard-panel stack' },
+    h('div', { class: 'dashboard-hero' },
+      h('div', {},
+        h('p', { class: 'eyebrow', text: 'Result dashboard' }),
+        h('h2', { text: 'Final results' }),
+        h('p', { class: 'muted', text: `${summary.completedAwards ?? 0} of ${summary.awardCount ?? 0} awards completed with ${formatInteger(summary.totalVotesCast)} total votes.` }),
+      ),
+      h('a', { class: 'button secondary small', href: `/api/admin/export.csv?eventId=${encodeURIComponent(appState.event.id)}`, text: 'Export CSV' }),
+    ),
+    h('div', { class: 'dashboard-metrics' },
+      dashboardMetric(`${summary.completedAwards ?? 0}/${summary.awardCount ?? 0}`, 'Awards', 'Completed'),
+      dashboardMetric(formatInteger(summary.totalVotesCast), 'Votes', 'Final rounds'),
+      dashboardMetric(formatInteger(summary.averageVotesPerAward), 'Avg votes', 'Per award'),
+      dashboardMetric(formatDashboardPercent(summary.averageParticipationRate), 'Avg turnout', `${dashboard.participantCount ?? 0} active`),
+    ),
+    h('div', { class: 'result-awards' }, (dashboard.awards ?? []).map(awardResultCard)),
+  );
+}
+
+function dashboardMetric(value, label, caption) {
+  return h('div', { class: 'dashboard-metric' },
+    h('strong', { text: value }),
+    h('span', { text: label }),
+    caption ? h('small', { text: caption }) : null,
+  );
+}
+
+function awardResultCard(award) {
+  const complete = award.status === 'complete';
+  return h('article', { class: `result-award-card${complete ? '' : ' pending'}` },
+    h('div', { class: 'result-card-head' },
+      h('div', {},
+        h('h3', { text: award.title }),
+        award.description ? h('p', { class: 'muted', text: award.description }) : null,
+      ),
+      h('span', { class: 'result-pill', text: resultPillText(award) }),
+    ),
+    complete ? awardWinnerBlock(award) : h('p', { class: 'muted', text: 'No revealed result for this award.' }),
+    complete ? resultBars(award.results, award.votesCast) : null,
+  );
+}
+
+function resultPillText(award) {
+  if (award.status !== 'complete') return 'Pending';
+  if (award.roundNumber > 1) return `Runoff R${award.roundNumber}`;
+  return votesText(award.votesCast);
+}
+
+function awardWinnerBlock(award) {
+  if (!award.winners?.length) {
+    return h('div', { class: 'winner-summary muted', text: award.votesCast ? 'No winner revealed' : 'No votes cast' });
+  }
+  return h('div', { class: 'winner-summary' },
+    h('span', { class: 'winner-label', text: award.winnerMode === 'joint' ? 'Joint winners' : 'Winner' }),
+    h('div', { class: 'winner-chip-row' }, award.winners.map((winner) => h('span', { class: 'dashboard-winner' },
+      h('strong', { text: winner.name }),
+      winner.subtitle ? h('small', { text: winner.subtitle }) : null,
+    ))),
+  );
+}
+
+function resultBars(results, total) {
+  const rows = (results ?? []).slice(0, 8);
+  if (!rows.length) return null;
+  const maxCount = Math.max(...rows.map((row) => row.count), 1);
+  return h('div', { class: 'result-bars' }, rows.map((row) => {
+    const width = Math.max(0, Math.round((row.count / maxCount) * 100));
+    return h('div', { class: `result-bar-row${row.isWinner ? ' winner' : ''}`, 'aria-label': `${row.name}: ${votesText(row.count)}` },
+      h('div', { class: 'result-bar-name' },
+        h('span', { text: row.name }),
+        row.subtitle ? h('small', { text: row.subtitle }) : null,
+      ),
+      h('div', { class: 'result-bar-track' }, h('div', { class: 'result-bar-fill', style: `--bar-width: ${width}%;` })),
+      h('div', { class: 'result-bar-count' },
+        h('strong', { text: row.count }),
+        h('small', { text: formatPercent(row.count, total) }),
+      ),
+    );
+  }));
+}
+
+function dashboardInsightsPanel() {
+  const dashboard = appState.finalDashboard;
+  if (!dashboard) return h('section', { class: 'card admin-card stack' }, h('h2', { text: 'Result insights' }), h('p', { class: 'muted', text: 'No dashboard data yet.' }));
+  const highlights = dashboard.highlights ?? {};
+  return h('section', { class: 'card admin-card dashboard-insights stack' },
+    h('h2', { text: 'Result insights' }),
+    h('div', { class: 'insight-list' },
+      insightItem('Closest race', highlights.closestRace ? highlights.closestRace.title : 'No votes', highlights.closestRace ? closestRaceText(highlights.closestRace) : 'Reveal more results'),
+      insightItem('Biggest win', highlights.biggestWin ? highlights.biggestWin.title : 'No votes', highlights.biggestWin ? biggestWinText(highlights.biggestWin) : 'Reveal more results'),
+      insightItem('Highest turnout', highlights.highestTurnout ? highlights.highestTurnout.title : 'No votes', highlights.highestTurnout ? `${formatDashboardPercent(highlights.highestTurnout.participationRate)} turnout` : 'Reveal more results'),
+    ),
+    leaderboardPanel(dashboard.nomineeLeaderboard ?? []),
+  );
+}
+
+function insightItem(label, value, detail) {
+  return h('div', { class: 'insight-item' },
+    h('span', { text: label }),
+    h('strong', { text: value }),
+    h('small', { text: detail }),
+  );
+}
+
+function closestRaceText(award) {
+  if (award.winnerMode === 'joint') return 'Joint result';
+  return `${winnerNames(award.winners)} by ${votesText(award.margin)}`;
+}
+
+function biggestWinText(award) {
+  return `${winnerNames(award.winners)} by ${votesText(award.margin)}`;
+}
+
+function leaderboardPanel(rows) {
+  return h('div', { class: 'leaderboard-panel' },
+    h('h3', { text: 'Winner board' }),
+    rows.length ? h('ol', { class: 'leaderboard-list' }, rows.slice(0, 6).map((row) => h('li', {},
+      h('div', {},
+        h('strong', { text: row.name }),
+        row.subtitle ? h('small', { text: row.subtitle }) : null,
+      ),
+      h('span', { text: `${row.wins} win${row.wins === 1 ? '' : 's'}` }),
+      h('span', { text: votesText(row.votes) }),
+    ))) : h('p', { class: 'muted', text: 'No winners yet.' }),
+  );
+}
+
+function winnerNames(winners) {
+  return formatNameList((winners ?? []).map((winner) => winner.name));
+}
+
+function votesText(value) {
+  const count = Number(value) || 0;
+  return `${formatInteger(count)} vote${count === 1 ? '' : 's'}`;
+}
+
+function formatInteger(value) {
+  return (Number(value) || 0).toLocaleString();
+}
+
+function formatDashboardPercent(value) {
+  return `${Math.round(Number(value) || 0)}%`;
 }
 
 function detailsDraftFromEvent(event) {

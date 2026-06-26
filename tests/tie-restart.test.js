@@ -40,8 +40,15 @@ test('tied results can start a runoff with only tied nominees', async (t) => {
 
 test('event and votes survive an application restart', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'staff-awards-restart-'));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const first = await startTestApp({ directory });
+  let first = null;
+  let second = null;
+  t.after(async () => {
+    if (second) await second.stop({ remove: false });
+    if (first) await first.stop({ remove: false });
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  first = await startTestApp({ directory });
   const admin = first.client();
   await loginAdmin(admin);
   let state = await createEvent(admin);
@@ -59,9 +66,9 @@ test('event and votes survive an application restart', async (t) => {
   const participantCsrf = participant.csrfToken;
   const passwordHash = first.app.config.adminPasswordHash;
   await first.stop({ remove: false });
+  first = null;
 
-  const second = await startTestApp({ directory, adminPasswordHash: passwordHash });
-  t.after(() => second.stop({ remove: false }));
+  second = await startTestApp({ directory, adminPasswordHash: passwordHash });
   const restoredAdmin = second.client();
   restoredAdmin.cookies = adminCookie;
   restoredAdmin.csrfToken = adminCsrf;

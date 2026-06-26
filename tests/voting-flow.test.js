@@ -176,6 +176,15 @@ test('final next award reveals quickest to judge special award', async (t) => {
   state = await adminAction(admin, state, 'NEXT_AWARD');
 
   assert.equal(state.event.status, 'FINISHED');
+  assert.equal(state.finalDashboard.summary.awardCount, 2);
+  assert.equal(state.finalDashboard.summary.completedAwards, 2);
+  assert.equal(state.finalDashboard.summary.totalVotesCast, 6);
+  assert.equal(state.finalDashboard.summary.averageVotesPerAward, 3);
+  assert.equal(state.finalDashboard.summary.averageParticipationRate, 100);
+  assert.deepEqual(state.finalDashboard.awards.map((award) => award.votesCast), [3, 3]);
+  assert.equal(state.finalDashboard.awards.every((award) => award.winners.length === 1), true);
+  assert.equal(state.finalDashboard.nomineeLeaderboard.reduce((sum, nominee) => sum + nominee.wins, 0), 2);
+  assert.equal(state.finalDashboard.highlights.highestTurnout.participationRate, 100);
   assert.equal(state.specialAward.type, 'quickest-judge');
   assert.equal(state.specialAward.winnerLabel, joined[1].participant.label);
   assert.equal(state.specialAward.averageMs, 600);
