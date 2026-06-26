@@ -461,7 +461,7 @@ function liveController() {
     ),
     h('aside', { class: 'side-stack' },
       eventDetailsPanel(event),
-      finished ? dashboardInsightsPanel() : namedTallyPanel(),
+      finished ? winnerBoardPanel() : namedTallyPanel(),
       h('section', { class: 'card admin-card stack' },
         h('h3', { text: 'Display controls' }),
         h('div', { class: 'control-grid' },
@@ -503,6 +503,7 @@ function finalDashboardPanel() {
       dashboardMetric(formatInteger(summary.averageVotesPerAward), 'Avg votes', 'Per award'),
       dashboardMetric(formatDashboardPercent(summary.averageParticipationRate), 'Avg turnout', `${dashboard.participantCount ?? 0} active`),
     ),
+    dashboardInsightsStrip(dashboard),
     h('div', { class: 'result-awards' }, (dashboard.awards ?? []).map(awardResultCard)),
     quickestJudgePanel(dashboard.quickestJudgeAward),
   );
@@ -710,19 +711,29 @@ function resultBars(results, total) {
   }));
 }
 
-function dashboardInsightsPanel() {
-  const dashboard = appState.finalDashboard;
-  if (!dashboard) return h('section', { class: 'card admin-card stack' }, h('h2', { text: 'Result insights' }), h('p', { class: 'muted', text: 'No dashboard data yet.' }));
-  const highlights = dashboard.highlights ?? {};
-  return h('section', { class: 'card admin-card dashboard-insights stack' },
-    h('h2', { text: 'Result insights' }),
-    h('div', { class: 'insight-list' },
-      insightItem('Closest race', highlights.closestRace ? highlights.closestRace.title : 'No votes', highlights.closestRace ? closestRaceText(highlights.closestRace) : 'Reveal more results'),
-      insightItem('Biggest win', highlights.biggestWin ? highlights.biggestWin.title : 'No votes', highlights.biggestWin ? biggestWinText(highlights.biggestWin) : 'Reveal more results'),
-      insightItem('Highest turnout', highlights.highestTurnout ? highlights.highestTurnout.title : 'No votes', highlights.highestTurnout ? `${formatDashboardPercent(highlights.highestTurnout.participationRate)} turnout` : 'Reveal more results'),
+function dashboardInsightsStrip(dashboard) {
+  const highlights = dashboard?.highlights ?? {};
+  return h('section', { class: 'dashboard-insight-strip' },
+    h('div', { class: 'dashboard-section-head' },
+      h('p', { class: 'eyebrow', text: 'Result insights' }),
+      h('h3', { text: 'Highlights' }),
     ),
-    leaderboardPanel(dashboard.nomineeLeaderboard ?? []),
+    h('div', { class: 'insight-list' }, resultInsightItems(highlights)),
   );
+}
+
+function resultInsightItems(highlights) {
+  return [
+    insightItem('Closest race', highlights.closestRace ? highlights.closestRace.title : 'No votes', highlights.closestRace ? closestRaceText(highlights.closestRace) : 'Reveal more results'),
+    insightItem('Biggest win', highlights.biggestWin ? highlights.biggestWin.title : 'No votes', highlights.biggestWin ? biggestWinText(highlights.biggestWin) : 'Reveal more results'),
+    insightItem('Highest turnout', highlights.highestTurnout ? highlights.highestTurnout.title : 'No votes', highlights.highestTurnout ? `${formatDashboardPercent(highlights.highestTurnout.participationRate)} turnout` : 'Reveal more results'),
+  ];
+}
+
+function winnerBoardPanel() {
+  const dashboard = appState.finalDashboard;
+  if (!dashboard) return h('section', { class: 'card admin-card stack' }, h('h2', { text: 'Winner board' }), h('p', { class: 'muted', text: 'No dashboard data yet.' }));
+  return h('section', { class: 'card admin-card dashboard-insights stack' }, leaderboardPanel(dashboard.nomineeLeaderboard ?? []));
 }
 
 function insightItem(label, value, detail) {

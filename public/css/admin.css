@@ -288,6 +288,11 @@ body {
 .quickest-time { color: var(--brand-plum); font-weight: 900; font-variant-numeric: tabular-nums; }
 .quickest-rank-row small { grid-column: 2 / 4; color: var(--muted); font-size: .78rem; }
 .dashboard-insights h3 { margin: 0; }
+.dashboard-insight-strip { display: grid; gap: .7rem; }
+.dashboard-section-head { display: flex; justify-content: space-between; align-items: end; gap: .8rem; }
+.dashboard-section-head h3 { margin: .05rem 0 0; }
+.dashboard-insight-strip .insight-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dashboard-insight-strip .insight-item { background: rgba(255, 255, 255, .74); }
 .insight-list { display: grid; gap: .65rem; }
 .insight-item {
   display: grid;
@@ -330,6 +335,7 @@ th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-s
   .dashboard-hero .button { width: max-content; max-width: 100%; }
   .result-awards { grid-template-columns: 1fr; }
   .result-card-head, .result-bar-row, .leaderboard-list li, .quickest-dashboard-head { grid-template-columns: 1fr; }
+  .dashboard-insight-strip .insight-list { grid-template-columns: 1fr; }
   .result-pill, .quickest-winner-badge { justify-self: start; }
   .result-bar-count { grid-template-columns: auto auto; justify-content: start; gap: .45rem; text-align: left; }
 }
