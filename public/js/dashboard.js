@@ -4,23 +4,45 @@ import { clear, formatPercent, h } from './common/dom.js';
 const root = document.querySelector('#app');
 const api = new ApiClient();
 let state = null;
+let accessToken = '';
 let message = '';
+let passwordRequired = false;
+let passwordDraft = '';
+let busy = false;
 
 void initialise();
 
 async function initialise() {
-  const token = readFragment('dashboard');
-  if (!token) {
+  accessToken = readFragment('dashboard');
+  if (!accessToken) {
     message = 'Dashboard link unavailable.';
     render();
     return;
   }
-  try {
-    state = await api.request('/api/dashboard/state', { method: 'POST', body: { token }, csrf: false });
-  } catch (error) {
-    message = friendlyError(error);
-  }
+  await loadDashboard();
+}
+
+async function loadDashboard(password = '') {
+  busy = true;
+  message = '';
   render();
+  try {
+    state = await api.request('/api/dashboard/state', { method: 'POST', body: { token: accessToken, password }, csrf: false });
+    passwordRequired = false;
+    passwordDraft = '';
+  } catch (error) {
+    state = null;
+    if (error instanceof ApiError && error.status === 401) {
+      passwordRequired = true;
+      message = '';
+    } else {
+      passwordRequired = error instanceof ApiError && error.status === 403 ? passwordRequired : false;
+      message = friendlyError(error);
+    }
+  } finally {
+    busy = false;
+    render();
+  }
 }
 
 function readFragment(kind) {
@@ -29,6 +51,19 @@ function readFragment(kind) {
 }
 
 function render() {
+  if (busy && !state && !passwordRequired) {
+    clear(root, h('main', { class: 'dashboard-shell' }, dashboardHeader(null), h('section', { class: 'dashboard-empty' },
+      h('h1', { text: 'Loading results' }),
+      h('p', { text: 'Preparing the public dashboard.' }),
+    )));
+    return;
+  }
+
+  if (passwordRequired && !state) {
+    clear(root, passwordScreen());
+    return;
+  }
+
   if (message || !state) {
     clear(root, h('main', { class: 'dashboard-shell' }, dashboardHeader(null), h('section', { class: 'dashboard-empty' },
       h('h1', { text: 'Results unavailable' }),
@@ -43,8 +78,29 @@ function render() {
     dashboardHeader(state.event),
     heroPanel(state.event, dashboard),
     spotlightPanel(dashboard.nomineeLeaderboard ?? []),
+    quickestJudgePanel(dashboard.quickestJudgeAward),
     h('section', { class: 'public-awards' }, awards.map(awardCard)),
   ));
+}
+
+function passwordScreen() {
+  return h('main', { class: 'dashboard-shell' }, dashboardHeader(null), h('section', { class: 'dashboard-password-panel' },
+    h('div', {},
+      h('p', { class: 'eyebrow', text: 'Protected dashboard' }),
+      h('h1', { text: 'Enter password' }),
+      h('p', { text: message || 'This results dashboard is password protected.' }),
+    ),
+    h('form', { class: 'dashboard-password-form', onSubmit: submitPassword },
+      h('input', { class: 'input', type: 'password', value: passwordDraft, autocomplete: 'current-password', autofocus: true, placeholder: 'Password', onInput: (event) => { passwordDraft = event.target.value; } }),
+      h('button', { class: 'button', type: 'submit', disabled: busy || !passwordDraft, text: busy ? 'Checking...' : 'Unlock' }),
+    ),
+  ));
+}
+
+function submitPassword(event) {
+  event.preventDefault();
+  if (busy || !passwordDraft) return;
+  void loadDashboard(passwordDraft);
 }
 
 function dashboardHeader(event) {
@@ -96,6 +152,44 @@ function spotlightPanel(rows) {
   );
 }
 
+function quickestJudgePanel(award) {
+  const rows = award?.leaderboard ?? [];
+  if (!award || !rows.length) return null;
+  return h('section', { class: 'public-quickest-board' },
+    h('div', { class: 'public-quickest-head' },
+      h('div', {},
+        h('p', { class: 'eyebrow', text: 'Special award' }),
+        h('h2', { text: award.title ?? 'Quickest to Judge Award' }),
+        h('p', { text: `${award.winnerLabel} wins with a ${averageTimeText(award.averageSeconds, award.averageMs)} average.` }),
+      ),
+      h('div', { class: 'public-quickest-winner' },
+        h('span', { text: '#1' }),
+        h('strong', { text: award.winnerLabel }),
+        h('small', { text: `${averageTimeText(award.averageSeconds, award.averageMs)} avg` }),
+      ),
+    ),
+    h('div', { class: 'public-quickest-list' }, rows.map(quickestRankRow)),
+  );
+}
+
+function quickestRankRow(row) {
+  const hasAverage = row.averageMs !== null && row.averageMs !== undefined && Number.isFinite(Number(row.averageMs));
+  return h('div', { class: `public-quickest-row${row.rank === 1 ? ' first' : ''}${hasAverage ? '' : ' no-average'}` },
+    h('span', { class: 'public-quickest-rank', text: `#${row.rank}` }),
+    h('strong', { text: row.label }),
+    h('span', { class: 'public-quickest-time', text: averageTimeText(row.averageSeconds, row.averageMs) }),
+    h('small', { text: votesText(row.votesCast) }),
+  );
+}
+
+function averageTimeText(seconds, milliseconds) {
+  const value = Number(seconds);
+  if (seconds !== null && seconds !== undefined && Number.isFinite(value)) return `${value.toFixed(1)}s`;
+  const fallback = Number(milliseconds);
+  if (milliseconds !== null && milliseconds !== undefined && Number.isFinite(fallback)) return `${(fallback / 1000).toFixed(1)}s`;
+  return 'No votes';
+}
+
 function awardCard(award) {
   return h('article', { class: 'public-award-card' },
     h('div', { class: 'public-award-head' },
@@ -108,7 +202,18 @@ function awardCard(award) {
     winnerBlock(award),
     awardStats(award),
     resultBars(award.results, award.votesCast),
+    excludedNomineesNote(award.excludedNominees),
   );
+}
+
+function excludedNomineesNote(excludedNominees) {
+  const names = (excludedNominees ?? []).map(formatNomineeName);
+  if (!names.length) return null;
+  return h('p', { class: 'public-excluded-note', text: `Excluded from option: ${formatNameList(names)}.` });
+}
+
+function formatNomineeName(nominee) {
+  return nominee.subtitle ? `${nominee.name} (${nominee.subtitle})` : nominee.name;
 }
 
 function winnerBlock(award) {
@@ -162,6 +267,12 @@ function resultBars(results, total) {
   }));
 }
 
+function formatNameList(names) {
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
 function resultPillText(award) {
   if (award.roundNumber > 1) return `Runoff R${award.roundNumber}`;
   return votesText(award.votesCast);
@@ -188,6 +299,7 @@ function finishedDate(value) {
 
 function friendlyError(error) {
   if (error instanceof ApiError) {
+    if (error.status === 403 && passwordRequired) return 'Incorrect dashboard password.';
     if (error.status === 403) return 'This dashboard link is invalid or expired.';
     if (error.code === 'RESULTS_UNAVAILABLE') return error.message;
     return error.message;

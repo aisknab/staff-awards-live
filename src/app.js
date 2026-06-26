@@ -13,9 +13,9 @@ import { createLogger } from './logging.js';
 import { createQrSvg } from './qr.js';
 import { serveStatic } from './static-files.js';
 import { getClientIp, handleError, readJson, requestId, sendJson, sendText } from './http.js';
-import { requireAdminConfigured, validateCsrf, validateOrigin, verifyPassword } from './security.js';
+import { hashPassword, requireAdminConfigured, validateCsrf, validateOrigin, verifyPassword } from './security.js';
 import { idText, object, text } from './validation.js';
-import { notFound } from './errors.js';
+import { badRequest, forbidden, notFound, unauthenticated } from './errors.js';
 
 export function createApplication(options = {}) {
   const config = options.config ?? loadConfig(options.configOverrides);
@@ -145,6 +145,12 @@ export function createApplication(options = {}) {
       limiter.check('public-dashboard', ip, 120, 60_000);
       const body = object(await readJson(req, config.maxBodyBytes));
       const event = joinService.eventFromDashboardToken(String(body.token ?? ''));
+      const dashboardPasswordHash = String(event.public_dashboard_password_hash ?? '');
+      if (dashboardPasswordHash) {
+        const password = String(body.password ?? '');
+        if (!password) throw unauthenticated('Dashboard password required');
+        if (!await verifyPassword(password, dashboardPasswordHash)) throw forbidden('Invalid dashboard password');
+      }
       return sendJson(res, 200, eventService.publicDashboardState(event));
     }
 
@@ -181,6 +187,19 @@ export function createApplication(options = {}) {
       logger.info('Event details updated', { eventId: saved.id });
       hub.broadcastSnapshot(saved.id);
       return sendJson(res, 200, buildAdminState(session, saved.id));
+    }
+
+    if (method === 'PUT' && pathname === '/api/admin/dashboard-password') {
+      const session = sessionService.authenticate(req, 'ADMIN');
+      validateCsrf(req, session, config);
+      limiter.check('admin-action', session.id, 60, 60_000);
+      const body = object(await readJson(req, config.maxBodyBytes));
+      const password = text(body.password ?? '', 'password', { required: false, max: 100 });
+      if (password && password.length < 4) throw badRequest('VALIDATION_ERROR', 'password must be at least 4 characters');
+      const passwordHash = password ? await hashPassword(password, config.nodeEnv === 'test' ? { N: 1024 } : {}) : '';
+      const saved = eventService.updatePublicDashboardPassword({ ...body, passwordHash });
+      logger.info('Public dashboard password updated', { eventId: saved.event.id, protected: saved.event.publicDashboardPasswordSet });
+      return sendJson(res, 200, buildAdminState(session, saved.event.id));
     }
 
     if (method === 'GET' && pathname === '/api/admin/people-lists') {

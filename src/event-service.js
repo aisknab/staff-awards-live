@@ -155,6 +155,7 @@ export class EventService {
       voteDurationSeconds: event.vote_duration_seconds,
       joinOpen: Boolean(event.join_open),
       displayBlanked: Boolean(event.display_blanked),
+      publicDashboardPasswordSet: Boolean(event.public_dashboard_password_hash),
       version: event.version,
       nominees,
       awards,
@@ -395,6 +396,23 @@ export class EventService {
       this.audit(null, 'PEOPLE_LIST_DELETED', { listId });
     });
     return this.listPeopleLists();
+  }
+
+  updatePublicDashboardPassword(raw) {
+    const input = validateDashboardPasswordUpdate(raw);
+    const event = this.getEvent(input.eventId);
+    if (input.expectedEventVersion !== null && event.version !== input.expectedEventVersion) {
+      throw conflict('CONFLICT', 'Event was changed by another admin tab');
+    }
+    const timestamp = nowIso();
+    this.db.transaction(() => {
+      this.db.prepare(`
+        UPDATE events SET public_dashboard_password_hash = ?, version = version + 1, updated_at = ?
+        WHERE id = ?
+      `).run(input.passwordHash, timestamp, event.id);
+      this.audit(event.id, input.passwordHash ? 'PUBLIC_DASHBOARD_PASSWORD_SET' : 'PUBLIC_DASHBOARD_PASSWORD_CLEARED');
+    });
+    return this.adminState(event.id);
   }
 
   performAction(eventId, raw, actorRole = 'ADMIN') {
@@ -945,6 +963,15 @@ function validateVoteDuration(value) {
 function optionalVoteDuration(value) {
   if (value === undefined || value === null) return null;
   return validateVoteDuration(value);
+}
+
+function validateDashboardPasswordUpdate(raw) {
+  const input = object(raw);
+  return {
+    eventId: idText(input.eventId, 'eventId'),
+    expectedEventVersion: optionalVersion(input.expectedEventVersion, 'expectedEventVersion'),
+    passwordHash: text(input.passwordHash ?? '', 'passwordHash', { required: false, max: 300 }),
+  };
 }
 
 function validatePeopleList(raw) {

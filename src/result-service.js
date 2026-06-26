@@ -53,6 +53,55 @@ export class ResultService {
   }
 
   quickestJudge(eventId) {
+    const award = this.quickestJudgeAward(eventId, { includeParticipantIds: true });
+    const winner = award?.leaderboard.find((row) => hasAverageMs(row.averageMs)) ?? null;
+    return winner ? {
+      ...winner,
+      participantCount: award.participantsMeasured,
+      measuredVotes: award.votesMeasured,
+    } : null;
+  }
+
+  quickestJudgeAward(eventId, { includeParticipantIds = false } = {}) {
+    const ranking = this.quickestJudgeRanking(eventId);
+    const winner = ranking.rows.find((row) => hasAverageMs(row.averageMs)) ?? null;
+    if (!winner) return null;
+    return {
+      title: 'Quickest to Judge Award',
+      winnerLabel: winner.label,
+      averageMs: winner.averageMs,
+      averageSeconds: winner.averageSeconds,
+      votesMeasured: ranking.votesMeasured,
+      participantsMeasured: ranking.participantsMeasured,
+      participantCount: ranking.participantCount,
+      leaderboard: ranking.rows.map((row) => {
+        const ranked = {
+          rank: row.rank,
+          label: row.label,
+          averageMs: row.averageMs,
+          averageSeconds: row.averageSeconds,
+          votesCast: row.votesCast,
+        };
+        if (includeParticipantIds) ranked.participantId = row.participantId;
+        return ranked;
+      }),
+    };
+  }
+
+  quickestJudgeRanking(eventId) {
+    const participants = this.db.prepare(`
+      SELECT id AS participantId, anonymous_label AS label, joined_at AS joinedAt
+      FROM participants
+      WHERE event_id = ? AND status = 'ACTIVE'
+      ORDER BY joined_at ASC, anonymous_label COLLATE NOCASE ASC
+    `).all(eventId);
+    const totals = new Map(participants.map((participant, index) => [participant.participantId, {
+      participantId: participant.participantId,
+      label: participant.label,
+      sortOrder: index,
+      totalMs: 0,
+      votesCast: 0,
+    }]));
     const rows = this.db.prepare(`
       SELECT p.id AS participantId, p.anonymous_label AS label,
              v.created_at AS votedAt, r.opened_at AS openedAt
@@ -63,7 +112,7 @@ export class ResultService {
         AND r.opened_at IS NOT NULL
         AND p.status = 'ACTIVE'
     `).all(eventId);
-    const totals = new Map();
+    let votesMeasured = 0;
     for (const row of rows) {
       const openedAt = Date.parse(row.openedAt);
       const votedAt = Date.parse(row.votedAt);
@@ -72,18 +121,36 @@ export class ResultService {
       const existing = totals.get(row.participantId) ?? {
         participantId: row.participantId,
         label: row.label,
+        sortOrder: totals.size,
         totalMs: 0,
         votesCast: 0,
       };
       existing.totalMs += elapsedMs;
       existing.votesCast += 1;
       totals.set(row.participantId, existing);
+      votesMeasured += 1;
     }
-    const ranked = [...totals.values()]
-      .map((row) => ({ ...row, averageMs: row.totalMs / row.votesCast }))
-      .sort((a, b) => a.averageMs - b.averageMs || b.votesCast - a.votesCast || a.label.localeCompare(b.label));
-    const winner = ranked[0] ?? null;
-    return winner ? { ...winner, participantCount: ranked.length, measuredVotes: rows.length } : null;
+    const rowsWithAverages = [...totals.values()].map((row) => {
+      if (!row.votesCast) return { ...row, averageMs: null, averageSeconds: null };
+      const averageMs = Math.round(row.totalMs / row.votesCast);
+      return { ...row, averageMs, averageSeconds: Math.round(averageMs / 100) / 10 };
+    });
+    const ranked = rowsWithAverages
+      .sort((a, b) => compareQuickestRows(a, b))
+      .map((row, index) => ({
+        participantId: row.participantId,
+        label: row.label,
+        rank: index + 1,
+        averageMs: row.averageMs,
+        averageSeconds: row.averageSeconds,
+        votesCast: row.votesCast,
+      }));
+    return {
+      rows: ranked,
+      votesMeasured,
+      participantsMeasured: ranked.filter((row) => hasAverageMs(row.averageMs)).length,
+      participantCount: ranked.length,
+    };
   }
 
   revealed(roundId) {
@@ -116,6 +183,19 @@ export class ResultService {
     `).get(eventId);
     const activeParticipants = Number(participantStats?.activeParticipants ?? 0);
     const totalParticipants = Number(participantStats?.totalParticipants ?? 0);
+    const nominees = this.db.prepare(`
+      SELECT id AS nomineeId, display_name AS name, subtitle, sort_order AS sortOrder
+      FROM nominees
+      WHERE event_id = ? AND active = 1
+      ORDER BY sort_order ASC, display_name COLLATE NOCASE ASC, subtitle COLLATE NOCASE ASC
+    `).all(eventId);
+    const eligibleRows = this.db.prepare(`
+      SELECT an.award_id AS awardId, an.nominee_id AS nomineeId
+      FROM award_nominees an
+      JOIN awards a ON a.id = an.award_id
+      WHERE a.event_id = ?
+    `).all(eventId);
+    const exclusionsByAward = buildExcludedNominees(nominees, eligibleRows);
     const rows = this.db.prepare(`
       SELECT a.id AS awardId, a.title AS awardTitle, a.description AS awardDescription,
              a.sort_order AS awardSortOrder,
@@ -133,7 +213,7 @@ export class ResultService {
       ORDER BY a.sort_order ASC, r.round_number ASC,
                rr.is_winner DESC, rr.vote_count DESC, n.display_name COLLATE NOCASE ASC
     `).all(eventId);
-    const awards = groupDashboardAwards(rows, activeParticipants);
+    const awards = groupDashboardAwards(rows, activeParticipants, exclusionsByAward);
     const completedAwards = awards.filter((award) => award.status === 'complete');
     const totalVotesCast = completedAwards.reduce((sum, award) => sum + award.votesCast, 0);
     const nomineeLeaderboard = buildNomineeLeaderboard(completedAwards);
@@ -148,6 +228,7 @@ export class ResultService {
         averageParticipationRate: completedAwards.length ? Math.round(completedAwards.reduce((sum, award) => sum + award.participationRate, 0) / completedAwards.length) : 0,
       },
       highlights: buildDashboardHighlights(completedAwards),
+      quickestJudgeAward: this.quickestJudgeAward(eventId),
       nomineeLeaderboard,
       awards,
     };
@@ -169,7 +250,35 @@ export class ResultService {
 }
 
 
-function groupDashboardAwards(rows, activeParticipants) {
+function hasAverageMs(value) {
+  return value !== null && value !== undefined && Number.isFinite(Number(value));
+}
+
+function compareQuickestRows(a, b) {
+  const aHasAverage = hasAverageMs(a.averageMs);
+  const bHasAverage = hasAverageMs(b.averageMs);
+  if (aHasAverage !== bHasAverage) return aHasAverage ? -1 : 1;
+  if (aHasAverage) return a.averageMs - b.averageMs || b.votesCast - a.votesCast || a.label.localeCompare(b.label);
+  return a.sortOrder - b.sortOrder || a.label.localeCompare(b.label);
+}
+
+function buildExcludedNominees(nominees, eligibleRows) {
+  const eligibleByAward = new Map();
+  for (const row of eligibleRows) {
+    const eligible = eligibleByAward.get(row.awardId) ?? new Set();
+    eligible.add(row.nomineeId);
+    eligibleByAward.set(row.awardId, eligible);
+  }
+  const excludedByAward = new Map();
+  for (const [awardId, eligible] of eligibleByAward.entries()) {
+    excludedByAward.set(awardId, nominees
+      .filter((nominee) => !eligible.has(nominee.nomineeId))
+      .map(({ nomineeId, name, subtitle }) => ({ nomineeId, name, subtitle })));
+  }
+  return excludedByAward;
+}
+
+function groupDashboardAwards(rows, activeParticipants, exclusionsByAward = new Map()) {
   const awardsById = new Map();
   for (const row of rows) {
     let award = awardsById.get(row.awardId);
@@ -180,6 +289,7 @@ function groupDashboardAwards(rows, activeParticipants) {
         description: row.awardDescription,
         sortOrder: Number(row.awardSortOrder),
         rounds: new Map(),
+        excludedNominees: exclusionsByAward.get(row.awardId) ?? [],
       };
       awardsById.set(row.awardId, award);
     }
@@ -227,6 +337,7 @@ function dashboardAward(award, activeParticipants) {
       margin: null,
       winners: [],
       results: [],
+      excludedNominees: award.excludedNominees,
     };
   }
   const votesCast = finalRound.rows.reduce((sum, row) => sum + Number(row.count), 0);
@@ -255,6 +366,7 @@ function dashboardAward(award, activeParticipants) {
     margin: winners.length ? Math.max(0, topCount - nextCount) : null,
     winners,
     results,
+    excludedNominees: award.excludedNominees,
   };
 }
 

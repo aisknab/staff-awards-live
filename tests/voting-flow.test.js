@@ -145,11 +145,17 @@ test('final next award reveals quickest to judge special award', async (t) => {
   t.after(() => ctx.stop());
   const admin = ctx.client();
   await loginAdmin(admin);
-  let state = await createEvent(admin);
+  let state = await createEvent(admin, {
+    awards: [
+      { title: 'Mr Mute', description: 'Always talking on mute', eligibleNomineeKeys: ['n1', 'n2', 'n3', 'n4'] },
+      { title: 'Reply All Hero', description: 'For broad email distribution', eligibleNomineeKeys: ['n1', 'n2', 'n3'] },
+    ],
+  });
   state = await openFirstRound(admin, state);
 
   const participants = [ctx.client(), ctx.client(), ctx.client()];
-  const joined = await Promise.all(participants.map((participant) => joinWithCode(participant, state.event.access.manualCode)));
+  const observer = ctx.client();
+  const joined = await Promise.all([...participants, observer].map((participant) => joinWithCode(participant, state.event.access.manualCode)));
 
   await voteForFirstNominee(participants, joined);
   setVoteLatencies(ctx.app.services.database, state.event.currentRound.id, [
@@ -181,11 +187,22 @@ test('final next award reveals quickest to judge special award', async (t) => {
   assert.equal(state.finalDashboard.summary.completedAwards, 2);
   assert.equal(state.finalDashboard.summary.totalVotesCast, 6);
   assert.equal(state.finalDashboard.summary.averageVotesPerAward, 3);
-  assert.equal(state.finalDashboard.summary.averageParticipationRate, 100);
+  assert.equal(state.finalDashboard.summary.averageParticipationRate, 75);
   assert.deepEqual(state.finalDashboard.awards.map((award) => award.votesCast), [3, 3]);
+  assert.deepEqual(state.finalDashboard.awards[0].excludedNominees, []);
+  assert.deepEqual(state.finalDashboard.awards[1].excludedNominees.map((nominee) => nominee.name), ['Dev Singh']);
+  assert.equal(state.finalDashboard.quickestJudgeAward.winnerLabel, joined[1].participant.label);
+  assert.equal(state.finalDashboard.quickestJudgeAward.averageMs, 600);
+  const quickestRows = state.finalDashboard.quickestJudgeAward.leaderboard.map((row) => [row.rank, row.label, row.averageMs, row.votesCast]);
+  assert.deepEqual(quickestRows, [
+    [1, joined[1].participant.label, 600, 2],
+    [2, joined[0].participant.label, 1000, 2],
+    [3, joined[2].participant.label, 1400, 2],
+    [4, joined[3].participant.label, null, 0],
+  ]);
   assert.equal(state.finalDashboard.awards.every((award) => award.winners.length === 1), true);
   assert.equal(state.finalDashboard.nomineeLeaderboard.reduce((sum, nominee) => sum + nominee.wins, 0), 2);
-  assert.equal(state.finalDashboard.highlights.highestTurnout.participationRate, 100);
+  assert.equal(state.finalDashboard.highlights.highestTurnout.participationRate, 75);
 
   const dashboardToken = new URL(state.event.access.dashboardUrl).hash.slice('#dashboard/'.length);
   const anonymous = ctx.client();
@@ -195,9 +212,28 @@ test('final next award reveals quickest to judge special award', async (t) => {
   assert.equal(publicDashboard.dashboard.summary.completedAwards, 2);
   assert.equal(publicDashboard.dashboard.summary.totalVotesCast, 6);
   assert.equal(publicDashboard.dashboard.awards[0].results.some((row) => row.count === 0), false);
+  assert.deepEqual(publicDashboard.dashboard.awards[1].excludedNominees.map((nominee) => nominee.name), ['Dev Singh']);
+  assert.equal(publicDashboard.dashboard.quickestJudgeAward.winnerLabel, joined[1].participant.label);
+  assert.deepEqual(publicDashboard.dashboard.quickestJudgeAward.leaderboard.map((row) => [row.rank, row.label, row.averageMs, row.votesCast]), quickestRows);
+  assert.equal('participantId' in publicDashboard.dashboard.quickestJudgeAward.leaderboard[0], false);
 
   const badDashboard = await anonymous.request('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: `${dashboardToken}x` } });
   assert.equal(badDashboard.response.status, 403);
+
+  state = await admin.json('/api/admin/dashboard-password', { method: 'PUT', body: { eventId: state.event.id, expectedEventVersion: state.event.version, password: 'shareit' } });
+  assert.equal(state.event.publicDashboardPasswordSet, true);
+
+  const lockedDashboard = await anonymous.request('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: dashboardToken } });
+  assert.equal(lockedDashboard.response.status, 401);
+  const wrongPasswordDashboard = await anonymous.request('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: dashboardToken, password: 'wrong' } });
+  assert.equal(wrongPasswordDashboard.response.status, 403);
+  const unlockedDashboard = await anonymous.json('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: dashboardToken, password: 'shareit' } });
+  assert.equal(unlockedDashboard.dashboard.summary.totalVotesCast, 6);
+
+  state = await admin.json('/api/admin/dashboard-password', { method: 'PUT', body: { eventId: state.event.id, expectedEventVersion: state.event.version, password: '' } });
+  assert.equal(state.event.publicDashboardPasswordSet, false);
+  const clearedDashboard = await anonymous.json('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: dashboardToken } });
+  assert.equal(clearedDashboard.dashboard.summary.totalVotesCast, 6);
   assert.equal(state.specialAward.type, 'quickest-judge');
   assert.equal(state.specialAward.winnerLabel, joined[1].participant.label);
   assert.equal(state.specialAward.averageMs, 600);

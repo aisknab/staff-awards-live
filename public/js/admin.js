@@ -18,6 +18,7 @@ let editingDetails = false;
 let detailsDraft = null;
 let selectedPeopleListId = '';
 let peopleListName = '';
+let dashboardPasswordDraft = '';
 let roundTimer = null;
 let roundServerOffsetMs = 0;
 let roundServerTimeSource = '';
@@ -495,14 +496,63 @@ function finalDashboardPanel() {
         h('a', { class: 'button secondary small', href: `/api/admin/export.csv?eventId=${encodeURIComponent(appState.event.id)}`, text: 'Export CSV' }),
       ),
     ),
+    publicDashboardAccessPanel(dashboardUrl),
     h('div', { class: 'dashboard-metrics' },
       dashboardMetric(`${summary.completedAwards ?? 0}/${summary.awardCount ?? 0}`, 'Awards', 'Completed'),
       dashboardMetric(formatInteger(summary.totalVotesCast), 'Votes', 'Final rounds'),
       dashboardMetric(formatInteger(summary.averageVotesPerAward), 'Avg votes', 'Per award'),
       dashboardMetric(formatDashboardPercent(summary.averageParticipationRate), 'Avg turnout', `${dashboard.participantCount ?? 0} active`),
     ),
+    quickestJudgePanel(dashboard.quickestJudgeAward),
     h('div', { class: 'result-awards' }, (dashboard.awards ?? []).map(awardResultCard)),
   );
+}
+
+function publicDashboardAccessPanel(dashboardUrl) {
+  if (!dashboardUrl) return null;
+  const passwordSet = Boolean(appState.event?.publicDashboardPasswordSet);
+  return h('div', { class: 'public-link-panel' },
+    h('div', { class: 'public-link-copy' },
+      h('strong', { text: passwordSet ? 'Public dashboard is password protected' : 'Public dashboard has no password' }),
+      h('small', { text: passwordSet ? 'Visitors need the link and password.' : 'Anyone with the link can view results.' }),
+    ),
+    h('div', { class: 'public-password-tools' },
+      h('input', {
+        class: 'input',
+        type: 'password',
+        value: dashboardPasswordDraft,
+        maxlength: '100',
+        autocomplete: 'new-password',
+        placeholder: passwordSet ? 'New public password' : 'Public dashboard password',
+        onInput: (event) => { dashboardPasswordDraft = event.target.value; },
+      }),
+      h('button', { class: 'button small', type: 'button', disabled: busy || dashboardPasswordDraft.trim().length < 4, onClick: () => saveDashboardPassword(dashboardPasswordDraft), text: passwordSet ? 'Update password' : 'Set password' }),
+      passwordSet ? h('button', { class: 'button secondary small', type: 'button', disabled: busy, onClick: () => saveDashboardPassword(''), text: 'Clear password' }) : null,
+    ),
+  );
+}
+
+async function saveDashboardPassword(password) {
+  if (busy || !appState?.event) return;
+  busy = true;
+  message = '';
+  render();
+  try {
+    appState = await api.request('/api/admin/dashboard-password', {
+      method: 'PUT',
+      body: { eventId: appState.event.id, expectedEventVersion: appState.event.version, password },
+    });
+    dashboardPasswordDraft = '';
+    message = password ? 'Public dashboard password saved.' : 'Public dashboard password cleared.';
+  } catch (error) {
+    message = friendlyError(error);
+    if (error.code === 'CONFLICT') {
+      try { appState = await api.request(`/api/admin/state?eventId=${encodeURIComponent(appState.event.id)}`); } catch {}
+    }
+  } finally {
+    busy = false;
+    render();
+  }
 }
 
 async function copyDashboardUrl(url) {
@@ -523,6 +573,44 @@ function dashboardMetric(value, label, caption) {
   );
 }
 
+function quickestJudgePanel(award) {
+  const rows = award?.leaderboard ?? [];
+  if (!award || !rows.length) return null;
+  return h('section', { class: 'quickest-dashboard' },
+    h('div', { class: 'quickest-dashboard-head' },
+      h('div', {},
+        h('p', { class: 'eyebrow', text: 'Special award' }),
+        h('h3', { text: award.title ?? 'Quickest to Judge Award' }),
+        h('p', { class: 'muted', text: `${award.winnerLabel} averaged ${averageTimeText(award.averageSeconds, award.averageMs)} across ${formatInteger(award.votesMeasured)} measured votes.` }),
+      ),
+      h('div', { class: 'quickest-winner-badge' },
+        h('span', { text: '#1' }),
+        h('strong', { text: award.winnerLabel }),
+        h('small', { text: `${averageTimeText(award.averageSeconds, award.averageMs)} avg` }),
+      ),
+    ),
+    h('div', { class: 'quickest-rank-list' }, rows.map(quickestRankRow)),
+  );
+}
+
+function quickestRankRow(row) {
+  const hasAverage = row.averageMs !== null && row.averageMs !== undefined && Number.isFinite(Number(row.averageMs));
+  return h('div', { class: `quickest-rank-row${row.rank === 1 ? ' first' : ''}${hasAverage ? '' : ' no-average'}` },
+    h('span', { class: 'quickest-rank', text: `#${row.rank}` }),
+    h('strong', { text: row.label }),
+    h('span', { class: 'quickest-time', text: averageTimeText(row.averageSeconds, row.averageMs) }),
+    h('small', { text: votesText(row.votesCast) }),
+  );
+}
+
+function averageTimeText(seconds, milliseconds) {
+  const value = Number(seconds);
+  if (seconds !== null && seconds !== undefined && Number.isFinite(value)) return `${value.toFixed(1)}s`;
+  const fallback = Number(milliseconds);
+  if (milliseconds !== null && milliseconds !== undefined && Number.isFinite(fallback)) return `${(fallback / 1000).toFixed(1)}s`;
+  return 'No votes';
+}
+
 function awardResultCard(award) {
   const complete = award.status === 'complete';
   return h('article', { class: `result-award-card${complete ? ' complete' : ' pending'}` },
@@ -536,7 +624,18 @@ function awardResultCard(award) {
     complete ? awardWinnerBlock(award) : h('p', { class: 'muted', text: 'No revealed result for this award.' }),
     complete ? resultCardStats(award) : null,
     complete ? resultBars(award.results, award.votesCast) : null,
+    excludedNomineesNote(award.excludedNominees),
   );
+}
+
+function excludedNomineesNote(excludedNominees) {
+  const names = (excludedNominees ?? []).map(formatNomineeName);
+  if (!names.length) return null;
+  return h('p', { class: 'excluded-note', text: `Excluded from option: ${formatNameList(names)}.` });
+}
+
+function formatNomineeName(nominee) {
+  return nominee.subtitle ? `${nominee.name} (${nominee.subtitle})` : nominee.name;
 }
 
 function resultPillText(award) {
