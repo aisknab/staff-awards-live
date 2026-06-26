@@ -73,6 +73,7 @@ body {
 .dashboard-panel h2, .dashboard-insights h2 { margin: 0; }
 .dashboard-hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
 .dashboard-hero .button { flex: none; }
+.dashboard-actions { display: flex; justify-content: flex-end; align-items: flex-start; gap: .5rem; flex-wrap: wrap; }
 .dashboard-metrics { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: .7rem; }
 .dashboard-metric {
   border: 1px solid var(--border);

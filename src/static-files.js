@@ -18,6 +18,7 @@ export async function serveStatic(req, res, publicDir, pathname) {
   if (pathname === '/') relative = 'index.html';
   else if (pathname === '/admin') relative = 'admin.html';
   else if (pathname === '/display') relative = 'display.html';
+  else if (pathname === '/dashboard') relative = 'dashboard.html';
   else relative = pathname.replace(/^\/+/, '');
 
   if (!relative || relative.includes('\0') || relative.split('/').includes('..')) return false;

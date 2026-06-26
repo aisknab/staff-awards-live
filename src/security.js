@@ -48,9 +48,17 @@ export function verifyAccessToken(secret, purpose, rawToken, event) {
   if (dot < 1) return false;
   const eventId = rawToken.slice(0, dot);
   if (eventId !== event.id) return false;
-  const version = purpose === 'join' ? event.join_token_version : event.display_token_version;
+  const version = accessTokenVersion(purpose, event);
+  if (version === null || version === undefined) return false;
   const expected = deriveAccessToken(secret, purpose, event.id, version);
   return safeEqualText(expected, rawToken);
+}
+
+function accessTokenVersion(purpose, event) {
+  if (purpose === 'join') return event.join_token_version;
+  if (purpose === 'display') return event.display_token_version;
+  if (purpose === 'dashboard') return event.status === 'FINISHED' ? event.finished_at : null;
+  return null;
 }
 
 export function deriveManualCode(secret, eventId, version, length = 6) {

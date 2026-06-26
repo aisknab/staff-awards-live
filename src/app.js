@@ -141,6 +141,13 @@ export function createApplication(options = {}) {
       return sendJson(res, 200, { ok: true }, { 'Set-Cookie': sessionService.clearCookie('ADMIN') });
     }
 
+    if (method === 'POST' && pathname === '/api/dashboard/state') {
+      limiter.check('public-dashboard', ip, 120, 60_000);
+      const body = object(await readJson(req, config.maxBodyBytes));
+      const event = joinService.eventFromDashboardToken(String(body.token ?? ''));
+      return sendJson(res, 200, eventService.publicDashboardState(event));
+    }
+
     if (method === 'GET' && pathname === '/api/admin/state') {
       const session = sessionService.authenticate(req, 'ADMIN');
       const eventId = url.searchParams.get('eventId');

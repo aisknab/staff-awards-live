@@ -40,4 +40,8 @@ test('admin authentication, CSRF, Origin, and security headers are enforced', as
   assert.match(page.headers.get('content-security-policy'), /default-src 'self'/);
   assert.equal(page.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(page.headers.get('referrer-policy'), 'no-referrer');
+
+  const dashboardPage = await fetch(`${ctx.baseUrl}/dashboard`, { headers: { Origin: ORIGIN } });
+  assert.equal(dashboardPage.status, 200);
+  assert.match(dashboardPage.headers.get('content-security-policy'), /default-src 'self'/);
 });

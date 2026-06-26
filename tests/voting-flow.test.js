@@ -176,6 +176,7 @@ test('final next award reveals quickest to judge special award', async (t) => {
   state = await adminAction(admin, state, 'NEXT_AWARD');
 
   assert.equal(state.event.status, 'FINISHED');
+  assert.match(state.event.access.dashboardUrl, /^http:\/\/awards\.test\/dashboard#dashboard\//);
   assert.equal(state.finalDashboard.summary.awardCount, 2);
   assert.equal(state.finalDashboard.summary.completedAwards, 2);
   assert.equal(state.finalDashboard.summary.totalVotesCast, 6);
@@ -185,6 +186,18 @@ test('final next award reveals quickest to judge special award', async (t) => {
   assert.equal(state.finalDashboard.awards.every((award) => award.winners.length === 1), true);
   assert.equal(state.finalDashboard.nomineeLeaderboard.reduce((sum, nominee) => sum + nominee.wins, 0), 2);
   assert.equal(state.finalDashboard.highlights.highestTurnout.participationRate, 100);
+
+  const dashboardToken = new URL(state.event.access.dashboardUrl).hash.slice('#dashboard/'.length);
+  const anonymous = ctx.client();
+  const publicDashboard = await anonymous.json('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: dashboardToken } });
+  assert.equal(publicDashboard.role, 'DASHBOARD');
+  assert.equal(publicDashboard.event.title, state.event.title);
+  assert.equal(publicDashboard.dashboard.summary.completedAwards, 2);
+  assert.equal(publicDashboard.dashboard.summary.totalVotesCast, 6);
+  assert.equal(publicDashboard.dashboard.awards[0].results.some((row) => row.count === 0), false);
+
+  const badDashboard = await anonymous.request('/api/dashboard/state', { method: 'POST', csrf: false, body: { token: `${dashboardToken}x` } });
+  assert.equal(badDashboard.response.status, 403);
   assert.equal(state.specialAward.type, 'quickest-judge');
   assert.equal(state.specialAward.winnerLabel, joined[1].participant.label);
   assert.equal(state.specialAward.averageMs, 600);

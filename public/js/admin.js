@@ -481,6 +481,7 @@ function finalDashboardPanel() {
     );
   }
   const summary = dashboard.summary ?? {};
+  const dashboardUrl = appState.event?.access?.dashboardUrl;
   return h('section', { class: 'card admin-card dashboard-panel stack' },
     h('div', { class: 'dashboard-hero' },
       h('div', {},
@@ -488,7 +489,11 @@ function finalDashboardPanel() {
         h('h2', { text: 'Final results' }),
         h('p', { class: 'muted', text: `${summary.completedAwards ?? 0} of ${summary.awardCount ?? 0} awards completed with ${formatInteger(summary.totalVotesCast)} total votes.` }),
       ),
-      h('a', { class: 'button secondary small', href: `/api/admin/export.csv?eventId=${encodeURIComponent(appState.event.id)}`, text: 'Export CSV' }),
+      h('div', { class: 'dashboard-actions' },
+        dashboardUrl ? h('a', { class: 'button small', href: dashboardUrl, target: '_blank', rel: 'noopener', text: 'Open public dashboard' }) : null,
+        dashboardUrl ? h('button', { class: 'button secondary small', type: 'button', onClick: () => copyDashboardUrl(dashboardUrl), text: 'Copy public link' }) : null,
+        h('a', { class: 'button secondary small', href: `/api/admin/export.csv?eventId=${encodeURIComponent(appState.event.id)}`, text: 'Export CSV' }),
+      ),
     ),
     h('div', { class: 'dashboard-metrics' },
       dashboardMetric(`${summary.completedAwards ?? 0}/${summary.awardCount ?? 0}`, 'Awards', 'Completed'),
@@ -498,6 +503,16 @@ function finalDashboardPanel() {
     ),
     h('div', { class: 'result-awards' }, (dashboard.awards ?? []).map(awardResultCard)),
   );
+}
+
+async function copyDashboardUrl(url) {
+  try {
+    await copyText(url);
+    message = 'Public dashboard link copied.';
+  } catch {
+    message = 'Clipboard access was unavailable.';
+  }
+  render();
 }
 
 function dashboardMetric(value, label, caption) {

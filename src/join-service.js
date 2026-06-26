@@ -22,6 +22,12 @@ export class JoinService {
     return event;
   }
 
+  eventFromDashboardToken(token) {
+    const event = this.eventFromCompoundToken(token);
+    if (!verifyAccessToken(this.config.appSecret, 'dashboard', token, event)) throw forbidden('Invalid or expired dashboard link');
+    return event;
+  }
+
   eventFromManualCode(rawCode) {
     const code = String(rawCode ?? '').normalize('NFC').trim().toUpperCase();
     if (!/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/.test(code)) throw forbidden('Invalid event code');

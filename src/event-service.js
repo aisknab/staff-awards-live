@@ -166,9 +166,13 @@ export class EventService {
   accessDetails(event) {
     const joinToken = deriveAccessToken(this.config.appSecret, 'join', event.id, event.join_token_version);
     const displayToken = deriveAccessToken(this.config.appSecret, 'display', event.id, event.display_token_version);
+    const dashboardToken = event.status === 'FINISHED' && event.finished_at
+      ? deriveAccessToken(this.config.appSecret, 'dashboard', event.id, event.finished_at)
+      : null;
     return {
       joinUrl: `${this.config.publicOrigin}/#join/${joinToken}`,
       displayUrl: `${this.config.publicOrigin}/display#display/${displayToken}`,
+      dashboardUrl: dashboardToken ? `${this.config.publicOrigin}/dashboard#dashboard/${dashboardToken}` : null,
       manualCode: deriveManualCode(this.config.appSecret, event.id, event.manual_code_version),
     };
   }
@@ -224,6 +228,21 @@ export class EventService {
         maskedTally: this.masked?.get(round) ?? this.results.publicTally(round),
         revealed: ['REVEALED', 'COMPLETE'].includes(round.status) ? this.results.revealed(round.id) : null,
       } : null,
+    };
+  }
+
+  publicDashboardState(event) {
+    if (event.status !== 'FINISHED') throw conflict('RESULTS_UNAVAILABLE', 'The public dashboard is only available after the event finishes');
+    return {
+      role: 'DASHBOARD',
+      event: {
+        id: event.id,
+        title: event.title,
+        subtitle: event.subtitle,
+        status: event.status,
+        finishedAt: event.finished_at,
+      },
+      dashboard: publicDashboard(this.results.finalDashboard(event.id)),
     };
   }
 
@@ -849,6 +868,17 @@ export class EventService {
     }
     return lines.map((line) => line.map(csvCell).join(',')).join('\r\n') + '\r\n';
   }
+}
+
+function publicDashboard(dashboard) {
+  return {
+    ...dashboard,
+    nomineeLeaderboard: (dashboard.nomineeLeaderboard ?? []).filter((row) => Number(row.votes) > 0 || Number(row.wins) > 0),
+    awards: (dashboard.awards ?? []).map((award) => ({
+      ...award,
+      results: (award.results ?? []).filter((row) => Number(row.count) > 0),
+    })),
+  };
 }
 
 function validateConfig(raw) {
