@@ -62,6 +62,7 @@
 .public-metric span { margin-top: .25rem; font-weight: 900; }
 
 .spotlight-panel,
+.public-insight-panel,
 .public-quickest-board,
 .public-award-card,
 .dashboard-empty {
@@ -91,6 +92,14 @@
 .spotlight-card small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .spotlight-stats { display: flex; gap: .45rem; flex-wrap: wrap; margin-top: .25rem; }
 .spotlight-stats span { border-radius: 999px; padding: .22rem .5rem; background: rgba(255, 255, 255, .72); color: var(--brand-plum); font-size: .8rem; font-weight: 900; }
+
+.public-insight-panel { display: grid; gap: .85rem; padding: 1rem; }
+.public-insight-panel h2 { margin: .1rem 0 0; }
+.public-insight-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
+.public-insight-card { display: grid; gap: .15rem; min-width: 0; border: 1px solid rgba(46, 39, 34, .12); border-radius: 8px; padding: .82rem; background: rgba(255, 255, 255, .74); }
+.public-insight-card span { color: var(--muted); font-size: .78rem; font-weight: 900; text-transform: uppercase; }
+.public-insight-card strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.12; font-size: 1.02rem; }
+.public-insight-card small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 
 .public-quickest-board { display: grid; gap: .9rem; padding: 1rem; background: linear-gradient(135deg, rgba(255, 240, 231, .9), rgba(236, 247, 255, .84)); }
 .public-quickest-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; align-items: start; }
@@ -257,7 +266,7 @@
 
 @media (max-width: 880px) {
   .public-hero { grid-template-columns: 1fr; }
-  .public-metrics, .spotlight-grid, .public-quickest-head { grid-template-columns: 1fr; }
+  .public-metrics, .spotlight-grid, .public-insight-grid, .public-quickest-head { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {

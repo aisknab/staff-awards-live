@@ -78,6 +78,7 @@ function render() {
   clear(root, h('main', { class: 'dashboard-shell' },
     dashboardHeader(state.event),
     heroPanel(state.event, dashboard),
+    publicInsightsPanel(dashboard.highlights ?? {}),
     spotlightPanel(dashboard.nomineeLeaderboard ?? []),
     h('section', { class: 'public-awards' }, awards.map(awardCard)),
     quickestJudgePanel(dashboard.quickestJudgeAward),
@@ -146,6 +147,41 @@ function metric(value, label) {
     h('strong', { text: value }),
     h('span', { text: label }),
   );
+}
+
+function publicInsightsPanel(highlights) {
+  return h('section', { class: 'public-insight-panel' },
+    h('div', {},
+      h('p', { class: 'eyebrow', text: 'Result insights' }),
+      h('h2', { text: 'Highlights' }),
+    ),
+    h('div', { class: 'public-insight-grid' },
+      publicInsightItem('Closest race', highlights.closestRace ? highlights.closestRace.title : 'No votes', highlights.closestRace ? closestRaceText(highlights.closestRace) : 'Reveal more results'),
+      publicInsightItem('Biggest win', highlights.biggestWin ? highlights.biggestWin.title : 'No votes', highlights.biggestWin ? biggestWinText(highlights.biggestWin) : 'Reveal more results'),
+      publicInsightItem('Highest turnout', highlights.highestTurnout ? highlights.highestTurnout.title : 'No votes', highlights.highestTurnout ? `${formatDashboardPercent(highlights.highestTurnout.participationRate)} turnout` : 'Reveal more results'),
+    ),
+  );
+}
+
+function publicInsightItem(label, value, detail) {
+  return h('article', { class: 'public-insight-card' },
+    h('span', { text: label }),
+    h('strong', { text: value }),
+    h('small', { text: detail }),
+  );
+}
+
+function closestRaceText(award) {
+  if (award.winnerMode === 'joint') return 'Joint result';
+  return `${winnerNames(award.winners)} by ${votesText(award.margin)}`;
+}
+
+function biggestWinText(award) {
+  return `${winnerNames(award.winners)} by ${votesText(award.margin)}`;
+}
+
+function winnerNames(winners) {
+  return formatNameList((winners ?? []).map((winner) => winner.name));
 }
 
 function spotlightPanel(rows) {
