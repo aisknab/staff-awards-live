@@ -78,8 +78,8 @@ function render() {
     dashboardHeader(state.event),
     heroPanel(state.event, dashboard),
     spotlightPanel(dashboard.nomineeLeaderboard ?? []),
-    quickestJudgePanel(dashboard.quickestJudgeAward),
     h('section', { class: 'public-awards' }, awards.map(awardCard)),
+    quickestJudgePanel(dashboard.quickestJudgeAward),
   ));
 }
 
@@ -258,13 +258,18 @@ function resultBars(results, total) {
         h('strong', { text: row.name }),
         row.subtitle ? h('small', { text: row.subtitle }) : null,
       ),
-      h('div', { class: 'public-bar-track' }, h('div', { class: 'public-bar-fill', style: `--bar-width: ${width}%;` })),
+      h('div', { class: 'public-bar-track' }, h('div', { class: `public-bar-fill ${barWidthClass(width)}` })),
       h('div', { class: 'public-bar-count' },
         h('strong', { text: row.count }),
         h('small', { text: formatPercent(row.count, total) }),
       ),
     );
   }));
+}
+
+function barWidthClass(width) {
+  const value = Math.max(0, Math.min(100, Math.round(Number(width) || 0)));
+  return `bar-width-${value}`;
 }
 
 function formatNameList(names) {

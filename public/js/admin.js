@@ -503,30 +503,36 @@ function finalDashboardPanel() {
       dashboardMetric(formatInteger(summary.averageVotesPerAward), 'Avg votes', 'Per award'),
       dashboardMetric(formatDashboardPercent(summary.averageParticipationRate), 'Avg turnout', `${dashboard.participantCount ?? 0} active`),
     ),
-    quickestJudgePanel(dashboard.quickestJudgeAward),
     h('div', { class: 'result-awards' }, (dashboard.awards ?? []).map(awardResultCard)),
+    quickestJudgePanel(dashboard.quickestJudgeAward),
   );
 }
 
 function publicDashboardAccessPanel(dashboardUrl) {
   if (!dashboardUrl) return null;
   const passwordSet = Boolean(appState.event?.publicDashboardPasswordSet);
+  let saveButton = null;
+  const passwordInput = h('input', {
+    class: 'input',
+    type: 'password',
+    value: dashboardPasswordDraft,
+    maxlength: '100',
+    autocomplete: 'new-password',
+    placeholder: passwordSet ? 'New public password' : 'Public dashboard password',
+    onInput: (event) => {
+      dashboardPasswordDraft = event.target.value;
+      if (saveButton) saveButton.disabled = busy || dashboardPasswordDraft.trim().length < 4;
+    },
+  });
+  saveButton = h('button', { class: 'button small', type: 'button', disabled: busy || dashboardPasswordDraft.trim().length < 4, onClick: () => saveDashboardPassword(dashboardPasswordDraft), text: passwordSet ? 'Update password' : 'Set password' });
   return h('div', { class: 'public-link-panel' },
     h('div', { class: 'public-link-copy' },
       h('strong', { text: passwordSet ? 'Public dashboard is password protected' : 'Public dashboard has no password' }),
       h('small', { text: passwordSet ? 'Visitors need the link and password.' : 'Anyone with the link can view results.' }),
     ),
     h('div', { class: 'public-password-tools' },
-      h('input', {
-        class: 'input',
-        type: 'password',
-        value: dashboardPasswordDraft,
-        maxlength: '100',
-        autocomplete: 'new-password',
-        placeholder: passwordSet ? 'New public password' : 'Public dashboard password',
-        onInput: (event) => { dashboardPasswordDraft = event.target.value; },
-      }),
-      h('button', { class: 'button small', type: 'button', disabled: busy || dashboardPasswordDraft.trim().length < 4, onClick: () => saveDashboardPassword(dashboardPasswordDraft), text: passwordSet ? 'Update password' : 'Set password' }),
+      passwordInput,
+      saveButton,
       passwordSet ? h('button', { class: 'button secondary small', type: 'button', disabled: busy, onClick: () => saveDashboardPassword(''), text: 'Clear password' }) : null,
     ),
   );
@@ -695,7 +701,7 @@ function resultBars(results, total) {
         h('span', { class: 'result-bar-person', text: row.name }),
         row.subtitle ? h('small', { text: row.subtitle }) : null,
       ),
-      h('div', { class: 'result-bar-track' }, h('div', { class: 'result-bar-fill', style: `--bar-width: ${width}%;` })),
+      h('div', { class: 'result-bar-track' }, h('div', { class: `result-bar-fill ${barWidthClass(width)}` })),
       h('div', { class: 'result-bar-count' },
         h('strong', { text: row.count }),
         h('small', { text: formatPercent(row.count, total) }),
@@ -1022,6 +1028,11 @@ async function action(actionName) {
     busy = false;
     render();
   }
+}
+
+function barWidthClass(width) {
+  const value = Math.max(0, Math.min(100, Math.round(Number(width) || 0)));
+  return `bar-width-${value}`;
 }
 
 function formatNameList(names) {
